@@ -6,7 +6,6 @@ import {
   ChevronsUp,
   Clock,
   Equal,
-  Inbox,
   ListFilter,
   Search,
   X,
@@ -531,27 +530,22 @@ function MyTasks() {
               Loading tasks…
             </div>
           ) : filteredTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-md rounded-xl border border-outline-variant bg-surface-container-lowest p-xl text-center shadow-sm">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-container-low text-outline">
-                <Inbox size={32} />
-              </div>
-              <div className="flex flex-col items-center gap-xs">
-                <h3 className="text-headline-md font-bold text-on-surface">
-                  {hasActiveFilters ? 'No matching tasks' : 'No tasks found'}
-                </h3>
-                <p className="max-w-[480px] text-body-lg text-on-surface-variant leading-relaxed">
-                  {hasActiveFilters
-                    ? 'No tasks matched your current search and filter criteria. Try resetting or adjusting your filters.'
-                    : tab === 'assigned'
-                      ? 'Nothing assigned to you right now in this project.'
-                      : "You haven't reported any issues yet in this project."}
-                </p>
-              </div>
+            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-xs text-center">
+              <p className="text-body-lg font-semibold text-on-surface">
+                {hasActiveFilters ? 'No matching tasks' : 'No tasks found'}
+              </p>
+              <p className="text-body-md text-on-surface-variant">
+                {hasActiveFilters
+                  ? 'No tasks matched your current search and filter criteria. Try resetting or adjusting your filters.'
+                  : tab === 'assigned'
+                    ? 'Nothing assigned to you right now in this project.'
+                    : "You haven't reported any issues yet in this project."}
+              </p>
               {hasActiveFilters && (
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="mt-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
+                  className="mt-xs text-label-md font-semibold text-primary hover:underline"
                 >
                   Clear all filters
                 </button>

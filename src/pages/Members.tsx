@@ -289,8 +289,8 @@ function Members() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="mx-auto w-full max-w-[1280px] flex-1 px-lg py-lg">
-        <div className="mb-lg flex items-start justify-between gap-md">
+      <div className="flex-1 py-lg">
+        <div className="mb-lg flex items-start justify-between gap-md px-lg">
           <div>
             <h1 className="text-headline-xl font-bold text-on-surface">
               Members
@@ -312,14 +312,14 @@ function Members() {
         </div>
 
         {!isOwner && (
-          <p className="mb-lg rounded-md bg-surface-container-low px-md py-sm text-body-md text-on-surface-variant">
+          <p className="mx-lg mb-lg rounded-md bg-surface-container-low px-md py-sm text-body-md text-on-surface-variant">
             Only the project owner can invite, change roles, or remove other
             members. You can still leave the project yourself.
           </p>
         )}
 
         {isOwner && currentProject?.access_code && (
-          <div className="mb-lg flex flex-wrap items-center justify-between gap-md rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-xs">
+          <div className="mb-lg flex flex-wrap items-center justify-between gap-md border-y border-outline-variant px-lg py-md">
             <div className="flex items-center gap-sm">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary">
                 <KeyRound size={20} />
@@ -360,168 +360,162 @@ function Members() {
         )}
 
         {actionError && (
-          <p className="mb-lg rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
+          <p className="mx-lg mb-lg rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
             {actionError}
           </p>
         )}
 
-        <div className="rounded-lg border border-outline-variant bg-surface-container-lowest shadow-raised">
-          <div className="flex flex-wrap items-center gap-sm border-b border-outline-variant p-md">
-            <div className="flex min-w-[280px] flex-1 items-center gap-sm rounded-md border border-outline-variant px-md py-sm">
-              <Search className="text-outline" size={18} />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search members..."
-                className="flex-1 bg-transparent text-body-lg text-on-surface outline-none placeholder:text-outline"
-              />
-            </div>
-            <div className="relative">
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value as ProjectRole | '')}
-                className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-sm pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low"
-              >
-                <option value="">All Roles</option>
-                <option value="OWNER">Owner</option>
-                <option value="DEVELOPER">Developer</option>
-                <option value="QA">QA</option>
-              </select>
-              <ChevronDown
-                className="pointer-events-none absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant"
-                size={16}
-              />
-            </div>
+        <div className="mb-md flex flex-wrap items-center gap-sm border-y border-outline-variant px-lg py-md">
+          <div className="flex min-w-[280px] flex-1 items-center gap-sm rounded-md border border-outline-variant px-md py-sm">
+            <Search className="text-outline" size={18} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search members..."
+              className="flex-1 bg-transparent text-body-lg text-on-surface outline-none placeholder:text-outline"
+            />
           </div>
+          <div className="relative">
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as ProjectRole | '')}
+              className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-sm pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low"
+            >
+              <option value="">All Roles</option>
+              <option value="OWNER">Owner</option>
+              <option value="DEVELOPER">Developer</option>
+              <option value="QA">QA</option>
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant"
+              size={16}
+            />
+          </div>
+        </div>
 
-          <table className="w-full">
-            <thead>
-              <tr className="bg-surface-container-low text-left text-label-md uppercase tracking-wide text-on-surface-variant">
-                <th className="px-lg py-sm font-semibold">Member</th>
-                <th className="px-lg py-sm font-semibold">Email</th>
-                <th className="px-lg py-sm font-semibold">Role</th>
-                <th className="px-lg py-sm font-semibold">Assigned Issues</th>
-                <th className="px-lg py-sm text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-lg py-xl text-center text-body-lg text-on-surface-variant">
-                    Loading…
-                  </td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-lg py-xl text-center text-body-lg text-on-surface-variant">
-                    No members match these filters.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((member) => (
-                  <tr
-                    key={member.user_id}
-                    className="border-t border-outline-variant hover:bg-surface-container-low"
-                  >
-                    <td className="px-lg py-md">
-                      <div className="flex items-center gap-sm">
-                        <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} />
-                        <span className="text-body-lg font-semibold text-on-surface">
-                          {member.full_name ?? 'Unnamed'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-lg py-md text-body-lg text-on-surface-variant">
-                      {member.email}
-                    </td>
-                    <td className="px-lg py-md">
-                      {isOwner ? (
-                        <span className={`inline-flex rounded-full ${roleTone[member.role]}`}>
-                          <select
-                            value={member.role}
-                            onChange={(e) =>
-                              handleRoleChange(member.user_id, e.target.value as ProjectRole)
-                            }
-                            className="appearance-none bg-transparent px-md py-xs text-label-md font-semibold outline-none"
-                          >
-                            <option value="OWNER">Project Owner</option>
-                            <option value="DEVELOPER">Developer</option>
-                            <option value="QA">QA</option>
-                          </select>
-                        </span>
-                      ) : (
-                        <span
-                          className={`inline-flex rounded-full px-md py-xs text-label-md font-semibold ${roleTone[member.role]}`}
-                        >
-                          {member.role === 'OWNER' ? 'Project Owner' : member.role}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-lg py-md text-body-lg text-on-surface">
-                      {member.assigned_issues}
-                    </td>
-                    <td className="px-lg py-md text-right">
-                      {member.user_id === user?.id ? (
-                        member.role !== 'OWNER' && (
-                          <button
-                            type="button"
-                            aria-label="Leave project"
-                            onClick={handleLeave}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
-                          >
-                            <LogOut size={18} />
-                          </button>
-                        )
-                      ) : (
-                        isOwner && (
-                          <button
-                            type="button"
-                            aria-label={`Remove ${member.full_name ?? member.email}`}
-                            onClick={() =>
-                              handleRemove(
-                                member.user_id,
-                                member.full_name ?? member.email,
-                              )
-                            }
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
-                          >
-                            <UserMinus size={18} />
-                          </button>
-                        )
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-
-          <div className="flex items-center justify-between px-lg py-md">
-            <p className="text-body-md text-on-surface-variant">
-              Showing 1 to {filtered.length} of {members.length} members
-            </p>
-            <div className="flex gap-sm">
-              <button
-                type="button"
-                disabled
-                className="rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-outline disabled:cursor-not-allowed"
-              >
-                Prev
-              </button>
-              <button
-                type="button"
-                disabled
-                className="rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-outline disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
+        {loading ? (
+          <div className="mx-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-lg text-on-surface-variant">
+            Loading…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex min-h-[50vh] items-center justify-center px-lg text-center text-body-lg text-on-surface-variant">
+            No members match these filters.
+          </div>
+        ) : (
+          <div className="border-t border-outline-variant">
+            <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_140px_90px] md:items-center md:gap-sm xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_140px_90px] xl:gap-lg">
+              <span className="min-w-0 truncate">Member</span>
+              <span className="min-w-0 truncate">Email</span>
+              <span className="min-w-0 truncate">Role</span>
+              <span className="min-w-0 truncate">Assigned Issues</span>
+              <span className="min-w-0 truncate text-right">Actions</span>
             </div>
+
+            {filtered.map((member) => {
+              const leaveButton = member.user_id === user?.id && member.role !== 'OWNER' && (
+                <button
+                  type="button"
+                  aria-label="Leave project"
+                  onClick={handleLeave}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
+                >
+                  <LogOut size={18} />
+                </button>
+              )
+              const removeButton = member.user_id !== user?.id && isOwner && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${member.full_name ?? member.email}`}
+                  onClick={() => handleRemove(member.user_id, member.full_name ?? member.email)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
+                >
+                  <UserMinus size={18} />
+                </button>
+              )
+              const roleBadge = isOwner ? (
+                <span className={`inline-flex rounded-full ${roleTone[member.role]}`}>
+                  <select
+                    value={member.role}
+                    onChange={(e) => handleRoleChange(member.user_id, e.target.value as ProjectRole)}
+                    className="appearance-none bg-transparent px-md py-xs text-label-md font-semibold outline-none"
+                  >
+                    <option value="OWNER">Project Owner</option>
+                    <option value="DEVELOPER">Developer</option>
+                    <option value="QA">QA</option>
+                  </select>
+                </span>
+              ) : (
+                <span
+                  className={`inline-flex rounded-full px-md py-xs text-label-md font-semibold ${roleTone[member.role]}`}
+                >
+                  {member.role === 'OWNER' ? 'Project Owner' : member.role}
+                </span>
+              )
+
+              return (
+                <div key={member.user_id}>
+                  {/* Mobile card */}
+                  <div className="border-b border-outline-variant p-lg hover:bg-surface-container-low md:hidden">
+                    <div className="flex items-start gap-sm">
+                      <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} className="shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-body-md font-semibold text-on-surface">
+                          {member.full_name ?? 'Unnamed'}
+                        </p>
+                        <p className="truncate text-label-md text-on-surface-variant">{member.email}</p>
+                      </div>
+                      {roleBadge}
+                    </div>
+                    <div className="mt-sm flex items-center justify-between gap-sm text-label-md text-on-surface-variant">
+                      <span>{member.assigned_issues} assigned issue{member.assigned_issues === 1 ? '' : 's'}</span>
+                      {(leaveButton || removeButton) && <div>{leaveButton || removeButton}</div>}
+                    </div>
+                  </div>
+
+                  {/* Desktop row */}
+                  <div className="hidden border-b border-outline-variant px-lg py-md hover:bg-surface-container-low md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_140px_90px] md:items-center md:gap-sm xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_140px_90px] xl:gap-lg xl:py-lg">
+                    <div className="flex min-w-0 items-center gap-sm">
+                      <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} className="shrink-0" />
+                      <span className="min-w-0 truncate text-body-md font-semibold text-on-surface xl:text-body-lg">
+                        {member.full_name ?? 'Unnamed'}
+                      </span>
+                    </div>
+                    <span className="min-w-0 truncate text-body-md text-on-surface-variant xl:text-body-lg">{member.email}</span>
+                    <div className="min-w-0">{roleBadge}</div>
+                    <span className="min-w-0 text-body-md text-on-surface xl:text-body-lg">{member.assigned_issues}</span>
+                    <div className="min-w-0 text-right">{leaveButton || removeButton}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="mt-md flex items-center justify-between px-lg">
+          <p className="text-body-md text-on-surface-variant">
+            Showing 1 to {filtered.length} of {members.length} members
+          </p>
+          <div className="flex gap-sm">
+            <button
+              type="button"
+              disabled
+              className="rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-outline disabled:cursor-not-allowed"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              disabled
+              className="rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-outline disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
           </div>
         </div>
 
         {isOwner && pendingInvitations.length > 0 && (
-          <div className="mt-lg rounded-lg border border-outline-variant bg-surface-container-lowest shadow-raised">
+          <div className="mx-lg mt-lg rounded-lg border border-outline-variant bg-surface-container-lowest shadow-raised">
             <div className="border-b border-outline-variant px-lg py-md">
               <h2 className="text-headline-md font-semibold text-on-surface">
                 Pending Invitations

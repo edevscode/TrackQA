@@ -172,8 +172,8 @@ function Issues() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="flex-1 px-lg py-lg">
-        <div className="mb-lg flex items-start justify-between">
+      <div className="flex-1 py-lg">
+        <div className="mb-lg flex items-start justify-between px-lg">
           <div>
             <h1 className="text-headline-xl font-bold text-on-surface">
               Issues
@@ -192,8 +192,7 @@ function Issues() {
           </button>
         </div>
 
-        <div className="rounded-lg border border-outline-variant bg-surface-container-lowest shadow-raised">
-          <div className="flex flex-wrap items-center gap-sm border-b border-outline-variant p-md">
+        <div className="mb-md flex flex-wrap items-center gap-sm border-y border-outline-variant px-lg py-md">
             <div className="flex min-w-[280px] flex-1 items-center gap-sm rounded-md border border-outline-variant px-md py-sm">
               <Search className="text-outline" size={18} />
               <input
@@ -289,101 +288,146 @@ function Issues() {
             )}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-label-md uppercase tracking-wide text-on-surface-variant">
-                  <th className="px-lg py-sm font-semibold">ID</th>
-                  <th className="px-lg py-sm font-semibold">Title</th>
-                  <th className="px-lg py-sm font-semibold">Priority</th>
-                  <th className="px-lg py-sm font-semibold">Status</th>
-                  <th className="px-lg py-sm font-semibold">Assignee</th>
-                  <th className="px-lg py-sm font-semibold">Reporter</th>
-                  <th className="px-lg py-sm font-semibold">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={7} className="px-lg py-xl text-center text-body-lg text-on-surface-variant">
-                      Loading…
-                    </td>
-                  </tr>
-                ) : issues.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-lg py-xl text-center text-body-lg text-on-surface-variant">
-                      No issues match these filters.
-                    </td>
-                  </tr>
-                ) : (
-                  issues.map((issue) => {
-                    const Priority = priorityConfig[issue.priority]
-                    const resolved = issue.status === 'PASSED' || issue.status === 'DONE'
-                    return (
-                      <tr
-                        key={issue.id}
-                        onClick={() => navigate(`/issues/${issue.id}`)}
-                        className={`cursor-pointer border-t border-outline-variant hover:bg-surface-container-low transition-colors ${
-                          issue.status === 'FAILED' ? 'bg-rose-50/40' : ''
+          {loading ? (
+            <div className="mx-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-lg text-on-surface-variant">
+              Loading…
+            </div>
+          ) : issues.length === 0 ? (
+            <div className="flex min-h-[50vh] items-center justify-center px-lg text-center text-body-lg text-on-surface-variant">
+              No issues match these filters.
+            </div>
+          ) : (
+            <div className="border-t border-outline-variant">
+              <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant md:grid md:grid-cols-[70px_minmax(0,1fr)_70px_110px_130px_110px_80px] md:items-center md:gap-sm xl:grid-cols-[90px_minmax(0,1fr)_70px_140px_180px_160px_100px] xl:gap-lg">
+                <span className="min-w-0 truncate">ID</span>
+                <span className="min-w-0 truncate">Title</span>
+                <span className="min-w-0 truncate">Priority</span>
+                <span className="min-w-0 truncate">Status</span>
+                <span className="min-w-0 truncate">Assignee</span>
+                <span className="min-w-0 truncate">Reporter</span>
+                <span className="min-w-0 truncate text-right">Updated</span>
+              </div>
+
+              {issues.map((issue) => {
+                const Priority = priorityConfig[issue.priority]
+                const resolved = issue.status === 'PASSED' || issue.status === 'DONE'
+                return (
+                  <div key={issue.id}>
+                    {/* Mobile card */}
+                    <div
+                      onClick={() => navigate(`/issues/${issue.id}`)}
+                      className={`cursor-pointer border-b border-outline-variant p-lg hover:bg-surface-container-low md:hidden ${
+                        issue.status === 'FAILED' ? 'bg-rose-50/40' : ''
+                      }`}
+                    >
+                      <div className="flex items-start gap-sm">
+                        {issue.assignee?.full_name ? (
+                          <Avatar
+                            name={issue.assignee.full_name}
+                            avatarUrl={issue.assignee.avatar_url}
+                            size={36}
+                            className="shrink-0"
+                          />
+                        ) : (
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
+                            <User size={16} />
+                          </div>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-xs text-label-md text-on-surface-variant">
+                            <span
+                              className={`font-mono ${resolved ? 'text-outline line-through' : ''}`}
+                            >
+                              {currentProject?.key}-{issue.issue_number}
+                            </span>
+                            <Priority.icon className={Priority.className} size={14} />
+                          </div>
+                          <p
+                            className={`mt-xs text-body-md font-semibold ${
+                              resolved ? 'text-on-surface-variant line-through' : 'text-on-surface'
+                            }`}
+                          >
+                            {issue.title}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`shrink-0 rounded-sm px-sm py-[2px] text-label-md font-semibold uppercase ${statusConfig[issue.status]}`}
+                        >
+                          {issue.status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="mt-sm flex items-center justify-between gap-sm text-label-md text-on-surface-variant">
+                        <span className="truncate">
+                          {issue.assignee?.full_name ?? 'Unassigned'}
+                          {issue.reporter?.full_name && ` · Reported by ${issue.reporter.full_name}`}
+                        </span>
+                        <span className="shrink-0">{timeAgo(issue.created_at)}</span>
+                      </div>
+                    </div>
+
+                    {/* Desktop row */}
+                    <div
+                      onClick={() => navigate(`/issues/${issue.id}`)}
+                      className={`hidden cursor-pointer border-b border-outline-variant px-lg py-md hover:bg-surface-container-low md:grid md:grid-cols-[70px_minmax(0,1fr)_70px_110px_130px_110px_80px] md:items-center md:gap-sm xl:grid-cols-[90px_minmax(0,1fr)_70px_140px_180px_160px_100px] xl:gap-lg xl:py-lg ${
+                        issue.status === 'FAILED' ? 'bg-rose-50/40' : ''
+                      }`}
+                    >
+                      <span
+                        className={`min-w-0 font-mono text-body-md ${
+                          resolved ? 'text-outline line-through' : 'text-on-surface-variant'
                         }`}
                       >
-                        <td
-                          className={`px-lg py-md font-mono text-code-sm ${
-                            resolved ? 'text-outline line-through' : 'text-on-surface-variant'
-                          }`}
-                        >
-                          {currentProject?.key}-{issue.issue_number}
-                        </td>
-                        <td
-                          className={`px-lg py-md text-body-lg ${
-                            resolved ? 'text-on-surface-variant line-through' : 'text-on-surface'
-                          }`}
-                        >
-                          {issue.title}
-                        </td>
-                        <td className="px-lg py-md">
-                          <Priority.icon className={Priority.className} size={18} />
-                        </td>
-                        <td className="px-lg py-md">
-                          <span
-                            className={`rounded-sm px-sm py-[2px] text-label-md font-semibold uppercase ${statusConfig[issue.status]}`}
-                          >
-                            {issue.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-lg py-md">
-                          {issue.assignee?.full_name ? (
-                            <div className="flex items-center gap-sm">
-                              <Avatar
-                                name={issue.assignee.full_name}
-                                avatarUrl={issue.assignee.avatar_url}
-                                size={28}
-                              />
-                              <span className="text-body-md text-on-surface">
-                                {issue.assignee.full_name}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
-                              <User size={14} />
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-lg py-md text-body-md text-on-surface-variant">
-                          {issue.reporter?.full_name ?? '—'}
-                        </td>
-                        <td className="px-lg py-md text-body-md text-on-surface-variant">
-                          {timeAgo(issue.created_at)}
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                        {currentProject?.key}-{issue.issue_number}
+                      </span>
+                      <span
+                        className={`min-w-0 text-body-md xl:text-body-lg ${
+                          resolved ? 'text-on-surface-variant line-through' : 'text-on-surface'
+                        }`}
+                      >
+                        {issue.title}
+                      </span>
+                      <Priority.icon className={`${Priority.className} shrink-0`} size={18} />
+                      <span
+                        className={`w-fit min-w-0 rounded-sm px-sm py-[2px] text-label-md font-semibold uppercase ${statusConfig[issue.status]}`}
+                      >
+                        {issue.status.replace('_', ' ')}
+                      </span>
+                      <div className="flex min-w-0 items-center gap-sm">
+                        {issue.assignee?.full_name ? (
+                          <>
+                            <Avatar
+                              name={issue.assignee.full_name}
+                              avatarUrl={issue.assignee.avatar_url}
+                              size={28}
+                              className="shrink-0"
+                            />
+                            <span className="min-w-0 text-body-md text-on-surface">
+                              {issue.assignee.full_name}
+                            </span>
+                          </>
+                        ) : (
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
+                            <User size={14} />
+                          </div>
+                        )}
+                      </div>
+                      <span className="min-w-0 text-body-md text-on-surface-variant">
+                        {issue.reporter?.full_name ?? '—'}
+                      </span>
+                      <span className="min-w-0 text-right text-body-md text-on-surface-variant">
+                        {timeAgo(issue.created_at)}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
-          <div className="flex items-center justify-between px-lg py-md">
+          <div className="mt-md flex items-center justify-between px-lg">
             <p className="text-body-md text-on-surface-variant">
               {totalCount === 0
                 ? 'No issues'
@@ -426,7 +470,6 @@ function Issues() {
               </button>
             </div>
           </div>
-        </div>
       </div>
     </div>
   )

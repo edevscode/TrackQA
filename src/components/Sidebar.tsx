@@ -5,9 +5,11 @@ import {
   HelpCircle,
   LayoutGrid,
   LogOut,
+  Menu,
   Plus,
   Settings,
   Users,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
@@ -31,6 +33,7 @@ function Sidebar() {
   const [unreadCount, setUnreadCount] = useState<number>(0)
   const [showSignOutModal, setShowSignOutModal] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const loadUnreadCount = useCallback(async () => {
     if (!user) return
@@ -58,12 +61,34 @@ function Sidebar() {
 
   return (
     <>
-      <aside className="sticky top-0 flex h-screen w-[300px] shrink-0 flex-col overflow-y-auto border-r border-outline-variant bg-surface-container-lowest">
+      {!mobileOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          className="fixed left-md top-md z-30 flex h-10 w-10 items-center justify-center rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface-variant shadow-raised lg:hidden"
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-[280px] shrink-0 flex-col overflow-y-auto border-r border-outline-variant bg-surface-container-lowest transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:w-[300px] lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="flex items-center gap-sm px-lg pt-lg pb-md">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary">
             <Bug className="text-on-primary" size={20} />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-headline-md font-bold text-primary leading-none">
               TrackQA
             </h1>
@@ -71,11 +96,20 @@ function Sidebar() {
               Quality Assurance
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close menu"
+            className="rounded-md p-xs text-on-surface-variant hover:bg-surface-container-low lg:hidden"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <div className="px-lg pt-sm pb-md">
           <Link
             to="/issues/new"
+            onClick={() => setMobileOpen(false)}
             className="flex w-full items-center justify-center gap-xs rounded-md bg-primary py-sm text-body-md font-semibold text-on-primary shadow-raised transition-colors hover:bg-primary-container"
           >
             <Plus size={16} />
@@ -88,6 +122,7 @@ function Sidebar() {
             <NavLink
               key={label}
               to={to}
+              onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-sm rounded-md px-md py-sm text-body-md font-medium transition-colors ${
                   isActive

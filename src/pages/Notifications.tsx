@@ -1,20 +1,5 @@
-import {
-  ArrowLeft,
-  Bell,
-  CheckCheck,
-  ChevronRight,
-  CircleCheck,
-  Clock,
-  ExternalLink,
-  Filter,
-  FlaskConical,
-  Inbox,
-  Mail,
-  MessageSquare,
-  UserPlus,
-  XCircle,
-} from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, CheckCheck, ExternalLink, Filter } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Sidebar from '../components/Sidebar'
@@ -33,52 +18,14 @@ import type { NotificationType } from '../lib/database.types'
 
 export type EnrichedNotification = EnrichedNotificationItem
 
-const typeConfig: Record<
-  NotificationType,
-  { icon: typeof Bell; label: string; badgeClass: string; iconClass: string }
-> = {
-  ISSUE_ASSIGNED: {
-    icon: UserPlus,
-    label: 'Assigned',
-    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
-    iconClass: 'text-blue-600',
-  },
-  READY_FOR_TESTING: {
-    icon: FlaskConical,
-    label: 'Testing Ready',
-    badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
-    iconClass: 'text-purple-600',
-  },
-  QA_PASSED: {
-    icon: CircleCheck,
-    label: 'QA Passed',
-    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    iconClass: 'text-emerald-600',
-  },
-  QA_FAILED: {
-    icon: XCircle,
-    label: 'QA Failed',
-    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
-    iconClass: 'text-rose-600',
-  },
-  ISSUE_DONE: {
-    icon: CircleCheck,
-    label: 'Completed',
-    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    iconClass: 'text-emerald-600',
-  },
-  COMMENT_ADDED: {
-    icon: MessageSquare,
-    label: 'Comment',
-    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    iconClass: 'text-primary',
-  },
-  INVITATION: {
-    icon: Mail,
-    label: 'Invitation',
-    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
-    iconClass: 'text-amber-600',
-  },
+const typeConfig: Record<NotificationType, { label: string }> = {
+  ISSUE_ASSIGNED: { label: 'Assigned' },
+  READY_FOR_TESTING: { label: 'Testing Ready' },
+  QA_PASSED: { label: 'QA Passed' },
+  QA_FAILED: { label: 'QA Failed' },
+  ISSUE_DONE: { label: 'Completed' },
+  COMMENT_ADDED: { label: 'Comment' },
+  INVITATION: { label: 'Invitation' },
 }
 
 function timeAgo(iso: string) {
@@ -113,6 +60,22 @@ function Notifications() {
   const [loading, setLoading] = useState(true)
   const [filterUnreadOnly, setFilterUnreadOnly] = useState(false)
   const [activeThreadKey, setActiveThreadKey] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    thread: NotificationThread
+  } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{
+    removed: EnrichedNotification[]
+    ids: string[]
+    timeoutId: ReturnType<typeof setTimeout>
+  } | null>(null)
+
+  const hasLoadedOnceRef = useRef(false)
+  const pendingDeleteRef = useRef(pendingDelete)
+  useEffect(() => {
+    pendingDeleteRef.current = pendingDelete
+  }, [pendingDelete])
 
   const load = useCallback(
     async (forceRefresh = false) => {
@@ -121,13 +84,18 @@ function Notifications() {
       const cacheKey = `notifications:${user.id}`
       const hasCached = !forceRefresh && queryCache.get(cacheKey)
 
-      if (!hasCached) {
+      // Only the very first load (no data on screen yet) shows a loading
+      // state. A realtime-triggered background refresh — including the one
+      // fired by our own optimistic updates (mark read/unread, delete) —
+      // should silently swap in fresh data with no visible flash.
+      if (!hasCached && !hasLoadedOnceRef.current) {
         setLoading(true)
       }
 
       try {
         const data = await fetchNotificationsData(user.id, { forceRefresh })
         setNotifications(data)
+        hasLoadedOnceRef.current = true
       } finally {
         setLoading(false)
       }
@@ -180,6 +148,53 @@ function Notifications() {
       .update({ is_read: false, read_at: null })
       .in('id', ids)
   }
+
+  const commitDelete = async (ids: string[]) => {
+    if (user?.id) invalidateNotificationsCache(user.id)
+    await supabase.from('notifications').delete().in('id', ids)
+  }
+
+  // Optimistically hides the thread and holds the actual delete for a few
+  // seconds so it can be undone. Only one pending delete is tracked at a
+  // time — starting a new one commits whatever was already pending.
+  const deleteThread = (threadNotifs: EnrichedNotification[]) => {
+    const ids = threadNotifs.map((n) => n.id)
+    if (ids.length === 0) return
+
+    if (pendingDeleteRef.current) {
+      clearTimeout(pendingDeleteRef.current.timeoutId)
+      commitDelete(pendingDeleteRef.current.ids)
+    }
+
+    setNotifications((prev) => prev.filter((n) => !ids.includes(n.id)))
+
+    const timeoutId = setTimeout(() => {
+      setPendingDelete(null)
+      commitDelete(ids)
+    }, 5000)
+
+    setPendingDelete({ removed: threadNotifs, ids, timeoutId })
+  }
+
+  const undoDelete = () => {
+    if (!pendingDelete) return
+    clearTimeout(pendingDelete.timeoutId)
+    setNotifications((prev) => [...prev, ...pendingDelete.removed])
+    setPendingDelete(null)
+  }
+
+  // If the page is left before the undo window elapses, commit the pending
+  // delete immediately rather than silently losing track of it.
+  useEffect(() => {
+    return () => {
+      const pd = pendingDeleteRef.current
+      if (pd) {
+        clearTimeout(pd.timeoutId)
+        commitDelete(pd.ids)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const markAllRead = async () => {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id)
@@ -292,42 +307,29 @@ function Notifications() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="mx-auto w-full max-w-[1024px] flex-1 px-lg py-lg">
+      <div className="w-full flex-1 py-lg">
         {/* Full-Page Thread View Mode */}
         {activeThread ? (
           <div className="flex flex-col gap-lg animate-in fade-in duration-150">
-            {/* Navigation back button */}
-            <div className="flex items-center justify-between border-b border-outline-variant pb-md">
-              <button
-                type="button"
-                onClick={() => setActiveThreadKey(null)}
-                className="flex items-center gap-xs text-body-lg font-semibold text-primary hover:underline"
-              >
-                <ArrowLeft size={18} />
-                <span>Back to All Notifications</span>
-              </button>
+            <button
+              type="button"
+              onClick={() => setActiveThreadKey(null)}
+              aria-label="Back to Notifications"
+              className="mx-lg flex w-fit items-center text-on-surface-variant hover:text-primary"
+            >
+              <ArrowLeft size={24} />
+            </button>
 
-              <div className="flex items-center gap-sm">
-                <button
-                  type="button"
-                  onClick={() => markThreadAsUnread(activeThread.notifications)}
-                  className="rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-label-md font-semibold text-on-surface-variant hover:bg-surface-container"
-                >
-                  Mark thread as unread
-                </button>
-              </div>
-            </div>
-
-            {/* Thread Header Banner */}
-            <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm">
-              <div className="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+            {/* Thread Header */}
+            <div className="border-y border-outline-variant p-lg">
+              <div className="flex flex-wrap items-start justify-between gap-md">
                 <div>
                   <div className="flex flex-wrap items-center gap-sm">
-                    <h1 className="text-headline-xl font-bold text-on-surface">
+                    <h1 className="text-headline-lg font-bold text-on-surface">
                       {activeThread.sourceTitle}
                     </h1>
                     {activeThread.projectKey && (
-                      <span className="rounded-md border border-outline-variant bg-surface-container-low px-sm py-[2px] text-label-md font-bold text-on-surface">
+                      <span className="text-label-md font-semibold text-on-surface-variant">
                         {activeThread.projectKey}
                       </span>
                     )}
@@ -339,17 +341,15 @@ function Notifications() {
                   )}
                 </div>
 
-                <div className="flex shrink-0 items-center gap-xs">
-                  <span className="rounded-full bg-surface-container-high px-md py-xs text-label-md font-semibold text-on-surface-variant">
-                    {activeThread.notifications.length} total event
-                    {activeThread.notifications.length === 1 ? '' : 's'}
-                  </span>
-                </div>
+                <span className="shrink-0 text-body-md text-on-surface-variant">
+                  {activeThread.notifications.length} event
+                  {activeThread.notifications.length === 1 ? '' : 's'}
+                </span>
               </div>
             </div>
 
-            {/* Notification Cards Stream (Spacious Full Page Layout) */}
-            <div className="flex flex-col gap-md">
+            {/* Notification Stream */}
+            <div className="flex flex-col divide-y divide-outline-variant px-lg">
               {activeThread.notifications
                 .slice()
                 .sort(
@@ -357,90 +357,46 @@ function Notifications() {
                     new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
                 )
                 .map((notif) => {
-                  const typeInfo = typeConfig[notif.type]
-                  const Icon = typeInfo.icon
                   const hasIssueRedirection = !!notif.issue_id
                   const hasInviteRedirection = notif.type === 'INVITATION'
 
                   return (
-                    <div
-                      key={notif.id}
-                      className={`overflow-hidden rounded-xl border transition-all ${
-                        notif.is_read
-                          ? 'border-outline-variant bg-surface-container-lowest shadow-sm'
-                          : 'border-primary/50 bg-primary-fixed/20 shadow-md ring-1 ring-primary/20'
-                      }`}
-                    >
-                      <div className="p-lg">
-                        {/* Card Header: Actor, Event Type badge, Timestamps */}
-                        <div className="flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant/60 pb-md">
-                          <div className="flex items-center gap-md">
-                            <Avatar
-                              name={notif.actor?.full_name}
-                              avatarUrl={notif.actor?.avatar_url}
-                              size={40}
-                            />
-                            <div>
-                              <div className="flex items-center gap-sm">
-                                <span className="text-body-lg font-bold text-on-surface">
-                                  {notif.actor?.full_name ?? 'System'}
-                                </span>
-                                <span
-                                  className={`flex items-center gap-xs rounded-full border px-sm py-[2px] text-label-md font-semibold ${typeInfo.badgeClass}`}
-                                >
-                                  <Icon size={12} className={typeInfo.iconClass} />
-                                  <span>{typeInfo.label}</span>
-                                </span>
-                              </div>
-                              <span className="flex items-center gap-xs text-label-md text-on-surface-variant">
-                                <Clock size={12} />
-                                <span>{new Date(notif.created_at).toLocaleString()}</span>
-                                <span>({timeAgo(notif.created_at)})</span>
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Card Content: Full Title & Message Body */}
-                        <div className="pt-md">
-                          <h3 className="text-headline-md font-semibold text-on-surface">
-                            {notif.title}
-                          </h3>
-
-                          {notif.message ? (
-                            <div className="mt-sm rounded-lg border border-outline-variant bg-surface-container-low/70 p-md text-body-lg text-on-surface whitespace-pre-wrap leading-relaxed">
-                              {notif.message}
-                            </div>
-                          ) : (
-                            <p className="mt-xs text-body-md text-on-surface-variant italic">
-                              No additional note or comment body.
-                            </p>
+                    <div key={notif.id} className="flex gap-md py-lg first:pt-0">
+                      <Avatar
+                        name={notif.actor?.full_name}
+                        avatarUrl={notif.actor?.avatar_url}
+                        size={44}
+                        className="shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-xs">
+                          <span className="text-body-lg font-semibold text-on-surface">
+                            {notif.actor?.full_name ?? 'System'}
+                          </span>
+                          <span className="text-body-md text-on-surface-variant">
+                            {typeConfig[notif.type].label} · {timeAgo(notif.created_at)}
+                          </span>
+                          {!notif.is_read && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                           )}
                         </div>
 
-                        {/* Card Footer: Contextual Specific Redirection (Only if applicable!) */}
+                        <p className="mt-xs text-body-lg text-on-surface">{notif.title}</p>
+
+                        {notif.message && (
+                          <p className="mt-xs whitespace-pre-wrap text-body-lg text-on-surface-variant">
+                            {notif.message}
+                          </p>
+                        )}
+
                         {(hasIssueRedirection || hasInviteRedirection) && (
-                          <div className="mt-lg flex items-center justify-end border-t border-outline-variant/60 pt-md">
-                            {hasIssueRedirection ? (
-                              <Link
-                                to={`/issues/${notif.issue_id}`}
-                                className="flex items-center gap-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-                              >
-                                <span>View</span>
-                                <ExternalLink size={14} />
-                              </Link>
-                            ) : (
-                              hasInviteRedirection && (
-                                <Link
-                                  to="/projects/join"
-                                  className="flex items-center gap-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-                                >
-                                  <span>Respond to Invitation</span>
-                                  <ExternalLink size={14} />
-                                </Link>
-                              )
-                            )}
-                          </div>
+                          <Link
+                            to={hasIssueRedirection ? `/issues/${notif.issue_id}` : '/projects/join'}
+                            className="mt-sm inline-flex items-center gap-xs text-body-md font-semibold text-primary hover:underline"
+                          >
+                            <span>{hasIssueRedirection ? 'View issue' : 'Respond to invitation'}</span>
+                            <ExternalLink size={14} />
+                          </Link>
                         )}
                       </div>
                     </div>
@@ -452,7 +408,7 @@ function Notifications() {
           /* Main Thread Inbox View */
           <>
             {/* Header */}
-            <div className="mb-lg flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-lg flex flex-col gap-md px-lg sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-sm">
                   <h1 className="text-headline-xl font-bold text-on-surface">
@@ -499,140 +455,152 @@ function Notifications() {
 
             {/* Messenger-Style Conversation Thread List */}
             {loading ? (
-              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-lg text-on-surface-variant">
+              <div className="mx-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-lg text-on-surface-variant">
                 Loading notifications…
               </div>
             ) : displayedThreads.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-md rounded-xl border border-outline-variant bg-surface-container-lowest p-xl text-center shadow-sm">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-container-low text-outline">
-                  <Inbox size={32} />
-                </div>
-                <div className="flex flex-col items-center gap-xs">
-                  <h3 className="text-headline-md font-bold text-on-surface">
-                    {filterUnreadOnly ? 'No unread notifications' : 'No notifications yet'}
-                  </h3>
-                  <p className="max-w-[480px] text-body-lg text-on-surface-variant leading-relaxed">
-                    {filterUnreadOnly
-                      ? "You've read all your notifications. You can view your previous notifications anytime."
-                      : "When tasks are assigned, tested, or commented on, they'll appear here."}
-                  </p>
-                </div>
+              <div className="flex min-h-[50vh] flex-col items-center justify-center gap-xs px-lg text-center">
+                <p className="text-body-lg font-semibold text-on-surface">
+                  {filterUnreadOnly ? 'No unread notifications' : 'No notifications yet'}
+                </p>
+                <p className="text-body-md text-on-surface-variant">
+                  {filterUnreadOnly
+                    ? "You've read all your notifications. You can view your previous notifications anytime."
+                    : "When tasks are assigned, tested, or commented on, they'll appear here."}
+                </p>
                 {filterUnreadOnly && (
                   <button
                     type="button"
                     onClick={() => setFilterUnreadOnly(false)}
-                    className="mt-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
+                    className="mt-xs text-label-md font-semibold text-primary hover:underline"
                   >
                     Show all notifications
                   </button>
                 )}
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
-                <div className="divide-y divide-outline-variant">
-                  {displayedThreads.map((thread) => {
-                    const latest = thread.latestNotification
-                    const latestType = typeConfig[latest.type]
-                    const Icon = latestType.icon
-                    const hasUnread = thread.unreadCount > 0
+              <div className="border-t border-outline-variant">
+                {displayedThreads.map((thread) => {
+                  const latest = thread.latestNotification
+                  const hasUnread = thread.unreadCount > 0
+                  const actorName = latest.actor?.full_name ?? 'System'
+                  const snippetText = latest.message || latest.title
 
-                    // Format snippet: "<ActorName>: <Message or Title>"
-                    const actorName = latest.actor?.full_name ?? 'System'
-                    const snippetText = latest.message || latest.title
-                    const previewSnippet = `${actorName}: ${snippetText}`
+                  return (
+                    <div
+                      key={thread.key}
+                      onClick={() => handleOpenThread(thread)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setContextMenu({ x: e.clientX, y: e.clientY, thread })
+                      }}
+                      className={`flex cursor-pointer items-start gap-md border-b border-outline-variant px-lg py-lg hover:bg-surface-container-low ${
+                        hasUnread ? 'bg-surface-container-lowest' : ''
+                      }`}
+                    >
+                      <Avatar
+                        name={latest.actor?.full_name}
+                        avatarUrl={latest.actor?.avatar_url}
+                        size={44}
+                        className="shrink-0"
+                      />
 
-                    return (
-                      <div
-                        key={thread.key}
-                        onClick={() => handleOpenThread(thread)}
-                        className={`group flex cursor-pointer items-center justify-between gap-md p-md transition-colors ${
-                          hasUnread
-                            ? 'bg-primary-fixed/20 hover:bg-primary-fixed/30'
-                            : 'hover:bg-surface-container-low'
-                        }`}
-                      >
-                        {/* Avatar + Thread Name + Preview Snippet in Front */}
-                        <div className="flex min-w-0 flex-1 items-center gap-md">
-                          <div className="relative shrink-0">
-                            <Avatar
-                              name={latest.actor?.full_name}
-                              avatarUrl={latest.actor?.avatar_url}
-                              size={44}
-                              className={hasUnread ? 'ring-2 ring-primary' : ''}
-                            />
-                            <div
-                              className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-surface-container-lowest shadow-sm ${latestType.badgeClass}`}
-                            >
-                              <Icon size={10} className={latestType.iconClass} />
-                            </div>
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-sm">
-                              <div className="flex min-w-0 items-center gap-xs">
-                                {hasUnread && (
-                                  <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
-                                )}
-                                <span
-                                  className={`truncate text-body-lg ${
-                                    hasUnread
-                                      ? 'font-bold text-on-surface'
-                                      : 'font-semibold text-on-surface'
-                                  }`}
-                                >
-                                  {thread.sourceTitle}
-                                </span>
-                                {thread.projectKey && (
-                                  <span className="shrink-0 rounded bg-surface-container px-xs py-0.5 text-[11px] font-semibold text-on-surface-variant">
-                                    {thread.projectKey}
-                                  </span>
-                                )}
-                              </div>
-
-                              <span className="shrink-0 text-label-md text-on-surface-variant">
-                                {timeAgo(latest.created_at)}
-                              </span>
-                            </div>
-
-                            <div className="mt-0.5 flex items-center justify-between gap-sm">
-                              <p
-                                className={`truncate text-body-md ${
-                                  hasUnread
-                                    ? 'font-medium text-on-surface'
-                                    : 'text-on-surface-variant'
-                                }`}
-                              >
-                                {previewSnippet}
-                              </p>
-
-                              <div className="flex shrink-0 items-center gap-xs">
-                                {hasUnread && (
-                                  <span className="rounded-full bg-primary px-sm py-[1px] text-[11px] font-bold text-on-primary">
-                                    {thread.unreadCount} new
-                                  </span>
-                                )}
-                                {thread.notifications.length > 1 && (
-                                  <span className="rounded-md border border-outline-variant bg-surface-container-low px-xs py-[1px] text-[11px] font-medium text-on-surface-variant">
-                                    {thread.notifications.length} updates
-                                  </span>
-                                )}
-                                <ChevronRight
-                                  size={16}
-                                  className="text-outline transition-transform group-hover:translate-x-0.5"
-                                />
-                              </div>
-                            </div>
-                          </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-sm">
+                          {hasUnread && (
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+                          )}
+                          <span
+                            className={`truncate text-body-lg ${
+                              hasUnread ? 'font-bold text-on-surface' : 'font-medium text-on-surface-variant'
+                            }`}
+                          >
+                            {thread.sourceTitle}
+                          </span>
+                          {thread.projectKey && (
+                            <span className="shrink-0 text-label-md text-on-surface-variant">
+                              {thread.projectKey}
+                            </span>
+                          )}
                         </div>
+                        <p
+                          className={`truncate text-body-md ${
+                            hasUnread ? 'text-on-surface' : 'text-on-surface-variant'
+                          }`}
+                        >
+                          {actorName}: {snippetText}
+                        </p>
                       </div>
-                    )
-                  })}
-                </div>
+
+                      <div className="flex shrink-0 flex-col items-end gap-xs">
+                        <span className="text-body-md text-on-surface-variant">
+                          {timeAgo(latest.created_at)}
+                        </span>
+                        {hasUnread && (
+                          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-xs text-[11px] font-bold text-on-primary">
+                            {thread.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </>
         )}
       </div>
+
+      {contextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setContextMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setContextMenu(null)
+            }}
+          />
+          <div
+            className="fixed z-50 w-48 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-raised"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                markThreadAsUnread(contextMenu.thread.notifications)
+                setContextMenu(null)
+              }}
+              className="block w-full px-md py-sm text-left text-body-md text-on-surface hover:bg-surface-container-low"
+            >
+              Mark as unread
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                deleteThread(contextMenu.thread.notifications)
+                setContextMenu(null)
+              }}
+              className="block w-full px-md py-sm text-left text-body-md text-error hover:bg-error-container"
+            >
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+
+      {pendingDelete && (
+        <div className="fixed bottom-lg left-1/2 z-50 flex -translate-x-1/2 items-center gap-md rounded-md bg-inverse-surface px-md py-sm shadow-raised">
+          <span className="text-body-md text-inverse-on-surface">Notification deleted</span>
+          <button
+            type="button"
+            onClick={undoDelete}
+            className="text-body-md font-semibold text-inverse-primary hover:underline"
+          >
+            Undo
+          </button>
+        </div>
+      )}
     </div>
   )
 }

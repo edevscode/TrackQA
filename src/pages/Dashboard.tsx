@@ -159,46 +159,46 @@ function Dashboard() {
           {loading ? (
             <p className="text-body-lg text-on-surface-variant">Loading…</p>
           ) : (
-            <div className="grid grid-cols-4 gap-lg">
-              <div className="col-span-3 flex flex-col gap-lg">
-                <div className="grid grid-cols-4 gap-lg">
-                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-raised">
+            <div className="grid grid-cols-1 gap-lg lg:grid-cols-4">
+              <div className="flex flex-col gap-lg lg:col-span-3">
+                <div className="grid grid-cols-2 gap-lg md:grid-cols-4">
+                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised lg:p-lg">
                     <div className="flex items-center justify-between gap-sm">
                       <span className="min-w-0 truncate text-body-md font-medium text-on-surface-variant">
                         Open Issues
                       </span>
                       <ClipboardList className="shrink-0 text-outline" size={18} />
                     </div>
-                    <span className="mt-sm block text-headline-xl font-bold text-on-surface">
+                    <span className="mt-sm block text-headline-lg font-bold text-on-surface lg:text-headline-xl">
                       {stats?.open_issues ?? 0}
                     </span>
                   </div>
 
-                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-raised">
+                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised lg:p-lg">
                     <div className="flex items-center justify-between gap-sm">
                       <span className="min-w-0 truncate text-body-md font-medium text-on-surface-variant">
                         In Progress
                       </span>
                       <RefreshCw className="shrink-0 text-outline" size={18} />
                     </div>
-                    <span className="mt-sm block text-headline-xl font-bold text-on-surface">
+                    <span className="mt-sm block text-headline-lg font-bold text-on-surface lg:text-headline-xl">
                       {stats?.in_progress_issues ?? 0}
                     </span>
                   </div>
 
-                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-raised">
+                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised lg:p-lg">
                     <div className="flex items-center justify-between gap-sm">
                       <span className="min-w-0 truncate text-body-md font-medium text-on-surface-variant">
                         For Testing
                       </span>
                       <FlaskConical className="shrink-0 text-outline" size={18} />
                     </div>
-                    <span className="mt-sm block text-headline-xl font-bold text-on-surface">
+                    <span className="mt-sm block text-headline-lg font-bold text-on-surface lg:text-headline-xl">
                       {stats?.for_testing_issues ?? 0}
                     </span>
                   </div>
 
-                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-raised">
+                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised lg:p-lg">
                     <div className="flex items-center justify-between gap-sm">
                       <span className="min-w-0 truncate text-body-md font-medium text-on-surface-variant">
                         Completed
@@ -206,7 +206,7 @@ function Dashboard() {
                       <CircleCheck className="shrink-0 text-outline" size={18} />
                     </div>
                     <div className="mt-sm flex flex-col items-start gap-xs">
-                      <span className="text-headline-xl font-bold text-on-surface">
+                      <span className="text-headline-lg font-bold text-on-surface lg:text-headline-xl">
                         {stats?.done_issues ?? 0}
                       </span>
                       <span className="whitespace-nowrap rounded-full bg-surface-container px-sm py-[2px] text-label-md font-semibold text-on-surface-variant">
@@ -238,6 +238,44 @@ function Dashboard() {
                       .
                     </p>
                   ) : (
+                    <>
+                    <div className="md:hidden">
+                      {recentIssues.map((issue) => {
+                        const Priority = priorityConfig[issue.priority]
+                        return (
+                          <Link
+                            key={issue.id}
+                            to={`/issues/${issue.id}`}
+                            className="flex items-start gap-sm border-t border-outline-variant px-lg py-md hover:bg-surface-container-low"
+                          >
+                            <Avatar
+                              name={issue.assignee?.full_name}
+                              avatarUrl={issue.assignee?.avatar_url}
+                              size={32}
+                              className="shrink-0 border border-outline-variant"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-xs text-label-md text-on-surface-variant">
+                                <span className="font-mono">
+                                  {currentProject?.key}-{issue.issue_number}
+                                </span>
+                                <Priority.icon className={Priority.className} size={14} />
+                              </div>
+                              <p className="mt-xs truncate text-body-md text-on-surface">
+                                {issue.title}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-full px-sm py-[2px] text-label-md font-semibold ${statusTone[issue.status]}`}
+                            >
+                              {issue.status.replace('_', ' ')}
+                            </span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
                     <table className="w-full">
                       <thead>
                         <tr className="text-left text-label-md uppercase tracking-wide text-on-surface-variant">
@@ -292,11 +330,13 @@ function Dashboard() {
                         })}
                       </tbody>
                     </table>
+                    </div>
+                    </>
                   )}
                 </div>
               </div>
 
-              <div className="col-span-1 flex flex-col gap-lg">
+              <div className="flex flex-col gap-lg lg:col-span-1">
                 <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-raised">
                   <h2 className="text-headline-md font-semibold text-on-surface">
                     QA Progress

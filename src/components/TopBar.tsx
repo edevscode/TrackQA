@@ -46,8 +46,8 @@ function TopBar() {
   }, [user?.email])
 
   return (
-    <header className="flex items-center gap-md border-b border-outline-variant bg-surface-container-lowest px-lg py-md">
-      <div className="flex flex-1 items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm">
+    <header className="flex items-center gap-sm border-b border-outline-variant bg-surface-container-lowest py-md pl-[64px] pr-lg lg:gap-md lg:px-lg">
+      <div className="hidden flex-1 items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm md:flex">
         <Search className="text-outline" size={18} />
         <input
           type="text"
@@ -62,11 +62,13 @@ function TopBar() {
         </kbd>
       </div>
 
+      <div className="flex-1 md:hidden" />
+
       <button
         type="button"
         aria-label="Notifications"
         onClick={() => navigate('/notifications')}
-        className="relative flex h-10 w-10 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low"
+        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low"
       >
         <Bell size={20} />
         {unreadCount > 0 && (
@@ -79,21 +81,23 @@ function TopBar() {
       <button
         type="button"
         aria-label="Help"
-        className="flex h-10 w-10 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low"
+        className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low md:flex"
       >
         <HelpCircle size={20} />
       </button>
 
-      <div className="h-8 w-px bg-outline-variant" />
+      <div className="hidden h-8 w-px shrink-0 bg-outline-variant md:block" />
 
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           type="button"
           onClick={() => setProjectMenuOpen((v) => !v)}
           className="relative flex items-center gap-sm rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-on-surface hover:bg-surface-container-low"
         >
-          {currentProject?.name ?? 'Select project'}
-          <ChevronDown size={16} />
+          <span className="max-w-[100px] truncate md:max-w-none">
+            {currentProject?.name ?? 'Select project'}
+          </span>
+          <ChevronDown size={16} className="shrink-0" />
           {hasPendingInvite && (
             <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-error" />
           )}
