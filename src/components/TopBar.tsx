@@ -47,7 +47,7 @@ function TopBar() {
 
   return (
     <header className="flex items-center gap-sm border-b border-outline-variant bg-surface-container-lowest py-md pl-[64px] pr-lg lg:gap-md lg:px-lg">
-      <div className="hidden flex-1 items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm md:flex">
+      <div className="hidden min-w-0 flex-1 items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm md:flex">
         <Search className="text-outline" size={18} />
         <input
           type="text"
@@ -94,7 +94,7 @@ function TopBar() {
           onClick={() => setProjectMenuOpen((v) => !v)}
           className="relative flex items-center gap-sm rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-on-surface hover:bg-surface-container-low"
         >
-          <span className="max-w-[100px] truncate md:max-w-none">
+          <span className="max-w-[100px] truncate sm:max-w-[200px] lg:max-w-[260px] xl:max-w-[360px]">
             {currentProject?.name ?? 'Select project'}
           </span>
           <ChevronDown size={16} className="shrink-0" />
