@@ -404,7 +404,7 @@ function Members() {
           </div>
         ) : (
           <div className="border-t border-outline-variant">
-            <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_140px_90px] lg:items-center lg:gap-sm xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_140px_90px] xl:gap-lg">
+            <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(120px,0.6fr)_minmax(90px,0.5fr)_64px] lg:items-center lg:gap-md">
               <span className="min-w-0 truncate">Member</span>
               <span className="min-w-0 truncate">Email</span>
               <span className="min-w-0 truncate">Role</span>
@@ -474,7 +474,7 @@ function Members() {
                   </div>
 
                   {/* Desktop row */}
-                  <div className="hidden border-b border-outline-variant px-lg py-md hover:bg-surface-container-low lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_140px_90px] lg:items-center lg:gap-sm xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_140px_90px] xl:gap-lg xl:py-lg">
+                  <div className="hidden border-b border-outline-variant px-lg py-md hover:bg-surface-container-low lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(120px,0.6fr)_minmax(90px,0.5fr)_64px] lg:items-center lg:gap-md">
                     <div className="flex min-w-0 items-center gap-sm">
                       <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} className="shrink-0" />
                       <span className="min-w-0 truncate text-body-md font-semibold text-on-surface xl:text-body-lg">

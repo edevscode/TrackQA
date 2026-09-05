@@ -298,7 +298,7 @@ function Issues() {
             </div>
           ) : (
             <div className="border-t border-outline-variant">
-              <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant lg:grid lg:grid-cols-[70px_minmax(0,1fr)_70px_110px_130px_110px_80px] lg:items-center lg:gap-sm xl:grid-cols-[90px_minmax(0,1fr)_70px_140px_180px_160px_100px] xl:gap-lg">
+              <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant lg:grid lg:grid-cols-[64px_minmax(0,2fr)_48px_minmax(88px,0.9fr)_minmax(96px,1fr)_minmax(96px,1fr)_84px] lg:items-center lg:gap-md">
                 <span className="min-w-0 truncate">ID</span>
                 <span className="min-w-0 truncate">Title</span>
                 <span className="min-w-0 truncate">Priority</span>
@@ -371,7 +371,7 @@ function Issues() {
                     {/* Desktop row */}
                     <div
                       onClick={() => navigate(`/issues/${issue.id}`)}
-                      className={`hidden cursor-pointer border-b border-outline-variant px-lg py-md hover:bg-surface-container-low lg:grid lg:grid-cols-[70px_minmax(0,1fr)_70px_110px_130px_110px_80px] lg:items-center lg:gap-sm xl:grid-cols-[90px_minmax(0,1fr)_70px_140px_180px_160px_100px] xl:gap-lg xl:py-lg ${
+                      className={`hidden cursor-pointer border-b border-outline-variant px-lg py-md hover:bg-surface-container-low lg:grid lg:grid-cols-[64px_minmax(0,2fr)_48px_minmax(88px,0.9fr)_minmax(96px,1fr)_minmax(96px,1fr)_84px] lg:items-center lg:gap-md ${
                         issue.status === 'FAILED' ? 'bg-rose-50/40' : ''
                       }`}
                     >
