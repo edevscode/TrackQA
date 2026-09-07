@@ -5,6 +5,8 @@ import RequireProject from './routes/RequireProject'
 
 import Login from './pages/Login'
 import SignUp from './pages/SignUp'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import Welcome from './pages/Welcome'
 import CreateProject from './pages/CreateProject'
 import JoinProject from './pages/JoinProject'
@@ -26,7 +28,13 @@ function App() {
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
       </Route>
+
+      {/* Not gated by PublicOnlyRoute: Supabase's recovery link establishes a
+          session automatically, which would otherwise bounce this page
+          straight to /dashboard before the user can set a new password. */}
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/welcome" element={<Welcome />} />
