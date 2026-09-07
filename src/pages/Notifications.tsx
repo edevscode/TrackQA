@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Sidebar from '../components/Sidebar'
+import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { useRealtimeSync } from '../hooks/useRealtimeSync'
@@ -18,14 +19,38 @@ import type { NotificationType } from '../lib/database.types'
 
 export type EnrichedNotification = EnrichedNotificationItem
 
-const typeConfig: Record<NotificationType, { label: string }> = {
-  ISSUE_ASSIGNED: { label: 'Assigned' },
-  READY_FOR_TESTING: { label: 'Testing Ready' },
-  QA_PASSED: { label: 'QA Passed' },
-  QA_FAILED: { label: 'QA Failed' },
-  ISSUE_DONE: { label: 'Completed' },
-  COMMENT_ADDED: { label: 'Comment' },
-  INVITATION: { label: 'Invitation' },
+const typeConfig: Record<
+  NotificationType,
+  { label: string; badgeClass: string }
+> = {
+  ISSUE_ASSIGNED: {
+    label: 'ASSIGNED',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface',
+  },
+  READY_FOR_TESTING: {
+    label: 'READY FOR QA',
+    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+  QA_PASSED: {
+    label: 'QA PASSED',
+    badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  },
+  QA_FAILED: {
+    label: 'QA FAILED',
+    badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+  },
+  ISSUE_DONE: {
+    label: 'CLOSED',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+  },
+  COMMENT_ADDED: {
+    label: 'NOTE',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface',
+  },
+  INVITATION: {
+    label: 'INVITE',
+    badgeClass: 'border-primary/30 bg-primary-fixed/30 text-primary',
+  },
 }
 
 function timeAgo(iso: string) {
@@ -84,10 +109,6 @@ function Notifications() {
       const cacheKey = `notifications:${user.id}`
       const hasCached = !forceRefresh && queryCache.get(cacheKey)
 
-      // Only the very first load (no data on screen yet) shows a loading
-      // state. A realtime-triggered background refresh — including the one
-      // fired by our own optimistic updates (mark read/unread, delete) —
-      // should silently swap in fresh data with no visible flash.
       if (!hasCached && !hasLoadedOnceRef.current) {
         setLoading(true)
       }
@@ -100,7 +121,6 @@ function Notifications() {
         setLoading(false)
       }
 
-      // Prefetch Project Settings while on Notifications page
       if (currentProject?.id) {
         prefetchProjectSettingsData(currentProject.id)
       }
@@ -149,53 +169,6 @@ function Notifications() {
       .in('id', ids)
   }
 
-  const commitDelete = async (ids: string[]) => {
-    if (user?.id) invalidateNotificationsCache(user.id)
-    await supabase.from('notifications').delete().in('id', ids)
-  }
-
-  // Optimistically hides the thread and holds the actual delete for a few
-  // seconds so it can be undone. Only one pending delete is tracked at a
-  // time — starting a new one commits whatever was already pending.
-  const deleteThread = (threadNotifs: EnrichedNotification[]) => {
-    const ids = threadNotifs.map((n) => n.id)
-    if (ids.length === 0) return
-
-    if (pendingDeleteRef.current) {
-      clearTimeout(pendingDeleteRef.current.timeoutId)
-      commitDelete(pendingDeleteRef.current.ids)
-    }
-
-    setNotifications((prev) => prev.filter((n) => !ids.includes(n.id)))
-
-    const timeoutId = setTimeout(() => {
-      setPendingDelete(null)
-      commitDelete(ids)
-    }, 5000)
-
-    setPendingDelete({ removed: threadNotifs, ids, timeoutId })
-  }
-
-  const undoDelete = () => {
-    if (!pendingDelete) return
-    clearTimeout(pendingDelete.timeoutId)
-    setNotifications((prev) => [...prev, ...pendingDelete.removed])
-    setPendingDelete(null)
-  }
-
-  // If the page is left before the undo window elapses, commit the pending
-  // delete immediately rather than silently losing track of it.
-  useEffect(() => {
-    return () => {
-      const pd = pendingDeleteRef.current
-      if (pd) {
-        clearTimeout(pd.timeoutId)
-        commitDelete(pd.ids)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const markAllRead = async () => {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id)
     if (unreadIds.length === 0) return
@@ -210,8 +183,43 @@ function Notifications() {
       .in('id', unreadIds)
   }
 
-  // Group notifications into Messenger-like conversation threads
-  const threads = useMemo<NotificationThread[]>(() => {
+  const deleteThread = (threadNotifs: EnrichedNotification[]) => {
+    const idsToDelete = threadNotifs.map((n) => n.id)
+    if (idsToDelete.length === 0) return
+
+    if (pendingDeleteRef.current) {
+      clearTimeout(pendingDeleteRef.current.timeoutId)
+      supabase.from('notifications').delete().in('id', pendingDeleteRef.current.ids)
+    }
+
+    const removedList = notifications.filter((n) => idsToDelete.includes(n.id))
+    setNotifications((prev) => prev.filter((n) => !idsToDelete.includes(n.id)))
+
+    if (activeThreadKey && threadNotifs.some((n) => n.id === threadNotifs[0]?.id)) {
+      setActiveThreadKey(null)
+    }
+
+    const timeoutId = setTimeout(async () => {
+      await supabase.from('notifications').delete().in('id', idsToDelete)
+      if (user?.id) invalidateNotificationsCache(user.id)
+      setPendingDelete(null)
+    }, 4000)
+
+    setPendingDelete({
+      removed: removedList,
+      ids: idsToDelete,
+      timeoutId,
+    })
+  }
+
+  const undoDelete = () => {
+    if (!pendingDelete) return
+    clearTimeout(pendingDelete.timeoutId)
+    setNotifications((prev) => [...prev, ...pendingDelete.removed])
+    setPendingDelete(null)
+  }
+
+  const threads = useMemo(() => {
     const map = new Map<string, NotificationThread>()
 
     notifications.forEach((n) => {
@@ -226,8 +234,9 @@ function Notifications() {
       if (n.issue_id && n.issue) {
         key = `issue:${n.issue_id}`
         sourceType = 'ISSUE'
-        sourceTitle = `${n.project?.key ?? 'ISSUE'}-${n.issue.issue_number}: ${n.issue.title}`
-        sourceSubtitle = n.project?.name ?? null
+        const prefix = projectKey ? `[${projectKey}-${n.issue.issue_number}]` : `#${n.issue.issue_number}`
+        sourceTitle = `${prefix} ${n.issue.title}`
+        sourceSubtitle = projectName
       } else if (n.type === 'INVITATION') {
         key = `invitation:${n.project_id || 'invite'}`
         sourceType = 'INVITATION'
@@ -239,9 +248,9 @@ function Notifications() {
         sourceTitle = `Project: ${n.project.name}`
         sourceSubtitle = `[${n.project.key}] updates`
       } else {
-        key = 'general'
+        key = `general:${n.id}`
         sourceType = 'GENERAL'
-        sourceTitle = 'General Notifications'
+        sourceTitle = n.title
         sourceSubtitle = null
       }
 
@@ -270,7 +279,6 @@ function Notifications() {
       }
     })
 
-    // Sort threads by latest notification timestamp (most recent thread at the top)
     return Array.from(map.values()).sort(
       (a, b) =>
         new Date(b.latestNotification.created_at).getTime() -
@@ -278,7 +286,6 @@ function Notifications() {
     )
   }, [notifications])
 
-  // Filtered threads
   const displayedThreads = useMemo(() => {
     if (filterUnreadOnly) {
       return threads.filter((t) => t.unreadCount > 0)
@@ -307,248 +314,250 @@ function Notifications() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="w-full flex-1 py-lg">
-        {/* Full-Page Thread View Mode */}
-        {activeThread ? (
-          <div className="flex flex-col gap-lg animate-in fade-in duration-150">
-            <button
-              type="button"
-              onClick={() => setActiveThreadKey(null)}
-              aria-label="Back to Notifications"
-              className="mx-lg flex w-fit items-center text-on-surface-variant hover:text-primary"
-            >
-              <ArrowLeft size={24} />
-            </button>
+      <div className="flex flex-1 flex-col min-w-0">
+        <TopBar />
 
-            {/* Thread Header */}
-            <div className="border-y border-outline-variant p-lg">
-              <div className="flex flex-wrap items-start justify-between gap-md">
-                <div>
-                  <div className="flex flex-wrap items-center gap-sm">
-                    <h1 className="text-headline-lg font-bold text-on-surface">
+        <main className="mx-auto w-full max-w-[1280px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          {activeThread ? (
+            /* Full-Page Thread View Mode */
+            <div className="flex flex-col gap-md animate-in fade-in duration-100">
+              <button
+                type="button"
+                onClick={() => setActiveThreadKey(null)}
+                aria-label="Back to Notifications"
+                className="flex w-fit items-center gap-xs font-mono text-code-xs font-semibold text-on-surface-variant hover:text-primary transition-colors"
+              >
+                <ArrowLeft size={16} />
+                <span>Return to Notifications Feed</span>
+              </button>
+
+              {/* Thread Header */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="flex flex-wrap items-start justify-between gap-sm">
+                  <div>
+                    <h1 className="text-headline-md font-bold text-on-surface">
                       {activeThread.sourceTitle}
                     </h1>
-                    {activeThread.projectKey && (
-                      <span className="text-label-md font-semibold text-on-surface-variant">
-                        {activeThread.projectKey}
+                    {activeThread.sourceSubtitle && (
+                      <p className="mt-xs font-mono text-code-xs text-on-surface-variant">
+                        {activeThread.sourceSubtitle}
+                      </p>
+                    )}
+                  </div>
+
+                  <span className="font-mono text-code-xs text-outline">
+                    {activeThread.notifications.length} AUDIT {activeThread.notifications.length === 1 ? 'EVENT' : 'EVENTS'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Notification Stream */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest divide-y divide-outline-variant">
+                {activeThread.notifications
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+                  )
+                  .map((notif) => {
+                    const hasIssueRedirection = !!notif.issue_id
+                    const hasInviteRedirection = notif.type === 'INVITATION'
+                    const typeInfo = typeConfig[notif.type]
+
+                    return (
+                      <div key={notif.id} className="flex gap-md p-md hover:bg-surface-container-low/50 transition-colors">
+                        <Avatar
+                          name={notif.actor?.full_name}
+                          avatarUrl={notif.actor?.avatar_url}
+                          size={36}
+                          className="shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-xs">
+                            <span className="text-body-md font-semibold text-on-surface">
+                              {notif.actor?.full_name ?? 'System'}
+                            </span>
+                            <span
+                              className={`rounded border px-xs py-0.2 font-mono text-code-xs font-semibold uppercase ${typeInfo.badgeClass}`}
+                            >
+                              {typeInfo.label}
+                            </span>
+                            <span className="font-mono text-code-xs text-outline">
+                              · {timeAgo(notif.created_at)}
+                            </span>
+                            {!notif.is_read && (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                            )}
+                          </div>
+
+                          <p className="mt-xs text-body-md text-on-surface">{notif.title}</p>
+
+                          {notif.message && (
+                            <p className="mt-xs whitespace-pre-wrap text-body-md text-on-surface-variant">
+                              {notif.message}
+                            </p>
+                          )}
+
+                          {(hasIssueRedirection || hasInviteRedirection) && (
+                            <Link
+                              to={hasIssueRedirection ? `/issues/${notif.issue_id}` : '/projects/join'}
+                              className="mt-xs inline-flex items-center gap-xs text-body-md font-semibold text-primary hover:underline"
+                            >
+                              <span>{hasIssueRedirection ? 'View issue' : 'View invitation'}</span>
+                              <ExternalLink size={14} />
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          ) : (
+            /* Main Thread Inbox View */
+            <>
+              {/* Header */}
+              <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-xs">
+                    <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">
+                      Notifications
+                    </h1>
+                    {totalUnreadCount > 0 && (
+                      <span className="rounded border border-primary/30 bg-primary-fixed/40 px-xs py-0.5 font-mono text-code-xs font-bold text-primary">
+                        {totalUnreadCount} UNREAD
                       </span>
                     )}
                   </div>
-                  {activeThread.sourceSubtitle && (
-                    <p className="mt-xs text-body-md text-on-surface-variant">
-                      {activeThread.sourceSubtitle}
-                    </p>
-                  )}
+                  <p className="mt-xs text-body-md text-on-surface-variant">
+                    Real-time verification alerts, issue updates, and project activity.
+                  </p>
                 </div>
 
-                <span className="shrink-0 text-body-md text-on-surface-variant">
-                  {activeThread.notifications.length} event
-                  {activeThread.notifications.length === 1 ? '' : 's'}
-                </span>
-              </div>
-            </div>
-
-            {/* Notification Stream */}
-            <div className="flex flex-col divide-y divide-outline-variant px-lg">
-              {activeThread.notifications
-                .slice()
-                .sort(
-                  (a, b) =>
-                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-                )
-                .map((notif) => {
-                  const hasIssueRedirection = !!notif.issue_id
-                  const hasInviteRedirection = notif.type === 'INVITATION'
-
-                  return (
-                    <div key={notif.id} className="flex gap-md py-lg first:pt-0">
-                      <Avatar
-                        name={notif.actor?.full_name}
-                        avatarUrl={notif.actor?.avatar_url}
-                        size={44}
-                        className="shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-xs">
-                          <span className="text-body-lg font-semibold text-on-surface">
-                            {notif.actor?.full_name ?? 'System'}
-                          </span>
-                          <span className="text-body-md text-on-surface-variant">
-                            {typeConfig[notif.type].label} · {timeAgo(notif.created_at)}
-                          </span>
-                          {!notif.is_read && (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                          )}
-                        </div>
-
-                        <p className="mt-xs text-body-lg text-on-surface">{notif.title}</p>
-
-                        {notif.message && (
-                          <p className="mt-xs whitespace-pre-wrap text-body-lg text-on-surface-variant">
-                            {notif.message}
-                          </p>
-                        )}
-
-                        {(hasIssueRedirection || hasInviteRedirection) && (
-                          <Link
-                            to={hasIssueRedirection ? `/issues/${notif.issue_id}` : '/projects/join'}
-                            className="mt-sm inline-flex items-center gap-xs text-body-md font-semibold text-primary hover:underline"
-                          >
-                            <span>{hasIssueRedirection ? 'View issue' : 'Respond to invitation'}</span>
-                            <ExternalLink size={14} />
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          </div>
-        ) : (
-          /* Main Thread Inbox View */
-          <>
-            {/* Header */}
-            <div className="mb-lg flex flex-col gap-md px-lg sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex items-center gap-sm">
-                  <h1 className="text-headline-xl font-bold text-on-surface">
-                    Notifications
-                  </h1>
-                  {totalUnreadCount > 0 && (
-                    <span className="rounded-full bg-primary px-sm py-[2px] text-label-md font-semibold text-on-primary">
-                      {totalUnreadCount} new
-                    </span>
-                  )}
-                </div>
-                <p className="mt-xs text-body-lg text-on-surface-variant">
-                  {totalUnreadCount > 0
-                    ? `You have ${totalUnreadCount} unread notification${totalUnreadCount === 1 ? '' : 's'}. Click any thread to review full details.`
-                    : "You're all caught up."}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-sm">
-                <button
-                  type="button"
-                  onClick={() => setFilterUnreadOnly((v) => !v)}
-                  className={`flex items-center gap-xs rounded-md border px-sm py-xs text-label-md font-semibold transition-colors ${
-                    filterUnreadOnly
-                      ? 'border-primary bg-primary-fixed text-on-primary-fixed'
-                      : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low'
-                  }`}
-                >
-                  <Filter size={14} />
-                  {filterUnreadOnly ? 'Unread Only' : 'Filter Unread'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={markAllRead}
-                  disabled={totalUnreadCount === 0}
-                  className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container-low disabled:opacity-50"
-                >
-                  <CheckCheck size={14} />
-                  Mark all read
-                </button>
-              </div>
-            </div>
-
-            {/* Messenger-Style Conversation Thread List */}
-            {loading ? (
-              <div className="mx-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-lg text-on-surface-variant">
-                Loading notifications…
-              </div>
-            ) : displayedThreads.length === 0 ? (
-              <div className="flex min-h-[50vh] flex-col items-center justify-center gap-xs px-lg text-center">
-                <p className="text-body-lg font-semibold text-on-surface">
-                  {filterUnreadOnly ? 'No unread notifications' : 'No notifications yet'}
-                </p>
-                <p className="text-body-md text-on-surface-variant">
-                  {filterUnreadOnly
-                    ? "You've read all your notifications. You can view your previous notifications anytime."
-                    : "When tasks are assigned, tested, or commented on, they'll appear here."}
-                </p>
-                {filterUnreadOnly && (
+                <div className="flex flex-wrap items-center gap-xs sm:gap-sm">
                   <button
                     type="button"
-                    onClick={() => setFilterUnreadOnly(false)}
-                    className="mt-xs text-label-md font-semibold text-primary hover:underline"
+                    onClick={() => setFilterUnreadOnly((v) => !v)}
+                    className={`inline-flex items-center gap-xs rounded border px-sm py-xs text-label-md font-semibold transition-colors ${
+                      filterUnreadOnly
+                        ? 'border-primary bg-primary-fixed text-on-primary-fixed'
+                        : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'
+                    }`}
                   >
-                    Show all notifications
+                    <Filter size={14} />
+                    <span>{filterUnreadOnly ? 'Showing Unread' : 'Filter Unread'}</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={markAllRead}
+                    disabled={totalUnreadCount === 0}
+                    className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors disabled:opacity-50"
+                  >
+                    <CheckCheck size={14} />
+                    <span>Mark All Read</span>
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="border-t border-outline-variant">
-                {displayedThreads.map((thread) => {
-                  const latest = thread.latestNotification
-                  const hasUnread = thread.unreadCount > 0
-                  const actorName = latest.actor?.full_name ?? 'System'
-                  const snippetText = latest.message || latest.title
 
-                  return (
-                    <div
-                      key={thread.key}
-                      onClick={() => handleOpenThread(thread)}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        setContextMenu({ x: e.clientX, y: e.clientY, thread })
-                      }}
-                      className={`flex cursor-pointer items-start gap-md border-b border-outline-variant px-lg py-lg hover:bg-surface-container-low ${
-                        hasUnread ? 'bg-surface-container-lowest' : ''
-                      }`}
-                    >
-                      <Avatar
-                        name={latest.actor?.full_name}
-                        avatarUrl={latest.actor?.avatar_url}
-                        size={44}
-                        className="shrink-0"
-                      />
+              {/* Feed Container */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest overflow-hidden">
+                {loading ? (
+                  <div className="p-xl text-center text-body-md text-on-surface-variant font-mono">
+                    Loading activity feeds…
+                  </div>
+                ) : displayedThreads.length === 0 ? (
+                  <div className="flex min-h-[300px] flex-col items-center justify-center p-xl text-center">
+                    <p className="text-headline-md font-semibold text-on-surface">
+                      {filterUnreadOnly ? 'No unread notifications' : 'No notifications yet'}
+                    </p>
+                    <p className="mt-xs text-body-md text-on-surface-variant max-w-md">
+                      {filterUnreadOnly
+                        ? 'All notifications have been reviewed.'
+                        : 'Verification outcomes, assignment changes, and comments will appear here.'}
+                    </p>
+                    {filterUnreadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterUnreadOnly(false)}
+                        className="mt-xs text-label-md font-semibold text-primary hover:underline"
+                      >
+                        Show all activity
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-outline-variant">
+                    {displayedThreads.map((thread) => {
+                      const latest = thread.latestNotification
+                      const hasUnread = thread.unreadCount > 0
+                      const actorName = latest.actor?.full_name ?? 'System'
+                      const snippetText = latest.message || latest.title
+                      const typeInfo = typeConfig[latest.type]
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-sm">
-                          {hasUnread && (
-                            <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
-                          )}
-                          <span
-                            className={`truncate text-body-lg ${
-                              hasUnread ? 'font-bold text-on-surface' : 'font-medium text-on-surface-variant'
-                            }`}
-                          >
-                            {thread.sourceTitle}
-                          </span>
-                          {thread.projectKey && (
-                            <span className="shrink-0 text-label-md text-on-surface-variant">
-                              {thread.projectKey}
-                            </span>
-                          )}
-                        </div>
-                        <p
-                          className={`truncate text-body-md ${
-                            hasUnread ? 'text-on-surface' : 'text-on-surface-variant'
+                      return (
+                        <div
+                          key={thread.key}
+                          onClick={() => handleOpenThread(thread)}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            setContextMenu({ x: e.clientX, y: e.clientY, thread })
+                          }}
+                          className={`flex cursor-pointer items-start gap-md p-md hover:bg-surface-container-low transition-colors ${
+                            hasUnread ? 'bg-surface-container-lowest' : 'bg-surface-container-lowest/70'
                           }`}
                         >
-                          {actorName}: {snippetText}
-                        </p>
-                      </div>
+                          <Avatar
+                            name={latest.actor?.full_name}
+                            avatarUrl={latest.actor?.avatar_url}
+                            size={36}
+                            className="shrink-0"
+                          />
 
-                      <div className="flex shrink-0 flex-col items-end gap-xs">
-                        <span className="text-body-md text-on-surface-variant">
-                          {timeAgo(latest.created_at)}
-                        </span>
-                        {hasUnread && (
-                          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-xs text-[11px] font-bold text-on-primary">
-                            {thread.unreadCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-xs">
+                              {hasUnread && (
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+                              )}
+                              <span
+                                className={`truncate text-body-md ${
+                                  hasUnread ? 'font-bold text-on-surface' : 'font-medium text-on-surface'
+                                }`}
+                              >
+                                {thread.sourceTitle}
+                              </span>
+                              <span
+                                className={`shrink-0 rounded border px-xs py-0.2 font-mono text-code-xs font-semibold uppercase ${typeInfo.badgeClass}`}
+                              >
+                                {typeInfo.label}
+                              </span>
+                            </div>
+                            <p
+                              className={`mt-xs truncate text-body-md ${
+                                hasUnread ? 'text-on-surface' : 'text-on-surface-variant'
+                              }`}
+                            >
+                              <strong className="font-semibold">{actorName}</strong>: {snippetText}
+                            </p>
+                          </div>
+
+                          <div className="flex shrink-0 flex-col items-end gap-xs font-mono text-code-xs text-outline">
+                            <span>{timeAgo(latest.created_at)}</span>
+                            {hasUnread && (
+                              <span className="flex h-5 min-w-[20px] items-center justify-center rounded border border-primary/30 bg-primary px-xs font-mono text-code-xs font-bold text-on-primary">
+                                {thread.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </main>
       </div>
 
       {contextMenu && (
@@ -562,7 +571,7 @@ function Notifications() {
             }}
           />
           <div
-            className="fixed z-50 w-48 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-raised"
+            className="fixed z-50 w-44 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm"
             style={{ top: contextMenu.y, left: contextMenu.x }}
           >
             <button
@@ -571,7 +580,7 @@ function Notifications() {
                 markThreadAsUnread(contextMenu.thread.notifications)
                 setContextMenu(null)
               }}
-              className="block w-full px-md py-sm text-left text-body-md text-on-surface hover:bg-surface-container-low"
+              className="block w-full px-sm py-xs text-left text-body-md text-on-surface hover:bg-surface-container transition-colors"
             >
               Mark as unread
             </button>
@@ -581,21 +590,21 @@ function Notifications() {
                 deleteThread(contextMenu.thread.notifications)
                 setContextMenu(null)
               }}
-              className="block w-full px-md py-sm text-left text-body-md text-error hover:bg-error-container"
+              className="block w-full px-sm py-xs text-left text-body-md text-error hover:bg-rose-500/10 transition-colors"
             >
-              Delete
+              Delete thread
             </button>
           </div>
         </>
       )}
 
       {pendingDelete && (
-        <div className="fixed bottom-lg left-1/2 z-50 flex -translate-x-1/2 items-center gap-md rounded-md bg-inverse-surface px-md py-sm shadow-raised">
-          <span className="text-body-md text-inverse-on-surface">Notification deleted</span>
+        <div className="fixed bottom-lg left-1/2 z-50 flex -translate-x-1/2 items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs shadow-sm">
+          <span className="text-body-md text-on-surface">Thread removed from dispatch</span>
           <button
             type="button"
             onClick={undoDelete}
-            className="text-body-md font-semibold text-inverse-primary hover:underline"
+            className="font-mono text-code-xs font-semibold text-primary hover:underline"
           >
             Undo
           </button>

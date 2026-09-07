@@ -1,159 +1,227 @@
 ---
 name: TrackQA Design System
+description: Precision Lab & Technical Workbench for QA verification and issue management
 colors:
-  surface: '#f7f9fb'
-  surface-dim: '#d8dadc'
-  surface-bright: '#f7f9fb'
-  surface-container-lowest: '#ffffff'
-  surface-container-low: '#f2f4f6'
-  surface-container: '#eceef0'
-  surface-container-high: '#e6e8ea'
-  surface-container-highest: '#e0e3e5'
-  on-surface: '#191c1e'
-  on-surface-variant: '#464553'
-  inverse-surface: '#2d3133'
-  inverse-on-surface: '#eff1f3'
-  outline: '#777584'
-  outline-variant: '#c8c4d5'
-  surface-tint: '#544fc0'
-  primary: '#1f108e'
+  primary: '#1e1b4b'
+  primary-hover: '#312e81'
+  primary-container: '#312e81'
   on-primary: '#ffffff'
-  primary-container: '#3730a3'
-  on-primary-container: '#a9a7ff'
-  inverse-primary: '#c3c0ff'
-  secondary: '#4648d4'
-  on-secondary: '#ffffff'
-  secondary-container: '#6063ee'
-  on-secondary-container: '#fffbff'
-  tertiary: '#440077'
-  on-tertiary: '#ffffff'
-  tertiary-container: '#6300aa'
-  on-tertiary-container: '#cd99ff'
-  error: '#ba1a1a'
+  on-primary-container: '#c7d2fe'
+  accent: '#4338ca'
+  accent-muted: '#e0e7ff'
+  surface: '#f8fafc'
+  surface-dim: '#f1f5f9'
+  surface-bright: '#ffffff'
+  surface-container-lowest: '#ffffff'
+  surface-container-low: '#f8fafc'
+  surface-container: '#f1f5f9'
+  surface-container-high: '#e2e8f0'
+  surface-container-highest: '#cbd5e1'
+  on-surface: '#0f172a'
+  on-surface-variant: '#475569'
+  inverse-surface: '#0f172a'
+  inverse-on-surface: '#f8fafc'
+  outline: '#94a3b8'
+  outline-variant: '#e2e8f0'
+  border-subtle: '#e2e8f0'
+  border-strong: '#cbd5e1'
+  error: '#dc2626'
   on-error: '#ffffff'
-  error-container: '#ffdad6'
-  on-error-container: '#93000a'
-  primary-fixed: '#e2dfff'
-  primary-fixed-dim: '#c3c0ff'
-  on-primary-fixed: '#0f0069'
-  on-primary-fixed-variant: '#3b35a7'
-  secondary-fixed: '#e1e0ff'
-  secondary-fixed-dim: '#c0c1ff'
-  on-secondary-fixed: '#07006c'
-  on-secondary-fixed-variant: '#2f2ebe'
-  tertiary-fixed: '#f0dbff'
-  tertiary-fixed-dim: '#ddb7ff'
-  on-tertiary-fixed: '#2c0051'
-  on-tertiary-fixed-variant: '#6900b3'
-  background: '#f7f9fb'
-  on-background: '#191c1e'
-  surface-variant: '#e0e3e5'
+  error-container: '#fee2e2'
+  on-error-container: '#991b1b'
+  status-open: '#475569'
+  status-open-bg: '#f1f5f9'
+  status-progress: '#0284c7'
+  status-progress-bg: '#e0f2fe'
+  status-testing: '#6366f1'
+  status-testing-bg: '#eef2ff'
+  status-passed: '#059669'
+  status-passed-bg: '#ecfdf5'
+  status-failed: '#dc2626'
+  status-failed-bg: '#fef2f2'
+  status-done: '#334155'
+  status-done-bg: '#f8fafc'
 typography:
   headline-xl:
-    fontFamily: Inter
-    fontSize: 36px
+    fontFamily: Inter, system-ui, sans-serif
+    fontSize: 32px
     fontWeight: '700'
-    lineHeight: 44px
+    lineHeight: 40px
     letterSpacing: -0.02em
   headline-lg:
-    fontFamily: Inter
+    fontFamily: Inter, system-ui, sans-serif
     fontSize: 24px
     fontWeight: '600'
     lineHeight: 32px
     letterSpacing: -0.01em
   headline-md:
-    fontFamily: Inter
+    fontFamily: Inter, system-ui, sans-serif
     fontSize: 20px
     fontWeight: '600'
     lineHeight: 28px
   body-lg:
-    fontFamily: Inter
+    fontFamily: Inter, system-ui, sans-serif
     fontSize: 16px
     fontWeight: '400'
     lineHeight: 24px
   body-md:
-    fontFamily: Inter
+    fontFamily: Inter, system-ui, sans-serif
     fontSize: 14px
     fontWeight: '400'
     lineHeight: 20px
   label-md:
-    fontFamily: Inter
+    fontFamily: Inter, system-ui, sans-serif
     fontSize: 12px
     fontWeight: '600'
     lineHeight: 16px
   code-sm:
-    fontFamily: JetBrains Mono
+    fontFamily: JetBrains Mono, monospace
     fontSize: 13px
-    fontWeight: '400'
+    fontWeight: '500'
     lineHeight: 18px
-  headline-lg-mobile:
-    fontFamily: Inter
-    fontSize: 20px
-    fontWeight: '600'
-    lineHeight: 28px
+  code-xs:
+    fontFamily: JetBrains Mono, monospace
+    fontSize: 12px
+    fontWeight: '500'
+    lineHeight: 16px
 rounded:
-  sm: 0.25rem
-  DEFAULT: 0.5rem
-  md: 0.75rem
-  lg: 1rem
-  xl: 1.5rem
+  sm: 4px
+  DEFAULT: 6px
+  md: 8px
+  lg: 12px
   full: 9999px
 spacing:
-  base: 4px
   xs: 4px
   sm: 8px
   md: 16px
   lg: 24px
-  xl: 48px
+  xl: 32px
+  2xl: 48px
   container-max: 1280px
   gutter: 16px
+components:
+  button-primary:
+    backgroundColor: '{colors.primary}'
+    textColor: '{colors.on-primary}'
+    rounded: '{rounded.DEFAULT}'
+    padding: '8px 16px'
+  button-secondary:
+    backgroundColor: '{colors.surface-container-lowest}'
+    textColor: '{colors.on-surface}'
+    rounded: '{rounded.DEFAULT}'
+    padding: '8px 16px'
 ---
 
-## Brand & Style
-The design system is built for a focused QA and issue management environment. The brand personality is efficient, reliable, and precise, prioritizing clarity over decoration. It adopts a **Corporate / Modern** aesthetic with a heavy leaning toward **Minimalism**. 
+# Design System: TrackQA
 
-The UI should evoke a sense of calm under pressure through generous whitespace, high-contrast typography, and a "flat-plus" execution—where depth is used sparingly to indicate interactivity. The goal is to remove the cognitive load found in legacy project management tools, offering a "simpler than Jira" experience that feels as fast as a text editor but as robust as a database.
+## Overview
+
+**Creative North Star: "Precision Lab & Technical Workbench"**
+
+TrackQA is built for software quality assurance engineers, technical developers, and engineering leads who require absolute clarity, data density, and verifiable reproducibility. It discards the soft, generic aesthetic of AI-generated SaaS templates in favor of a crisp, utilitarian instrument designed for intense daily operation.
+
+The interface prioritizes scan speed, high-contrast readability, and low visual fatigue during prolonged testing sessions. Rather than relying on fuzzy drop shadows, glowing purple halos, or endless nested cards, depth is communicated through disciplined 1px structural borders, clean surface planes, and purposeful monospace anchors for ticket identification.
+
+**Key Characteristics:**
+- **Crisp Structural Boundaries:** Sharp 1px neutral borders delineate sections cleanly without blurry, diffuse drop shadows.
+- **Purposeful Monospace Anchors:** Ticket keys (`TQA-101`), environment versions, access codes, and timestamps use **JetBrains Mono** to create unmistakable visual brackets for technical data.
+- **High Data Density Without Clutter:** Backlogs, issue cards, and detail panels favor compact tabular scanning and tight horizontal rhythm over cavernous whitespace.
+- **Unambiguous Status Architecture:** Status indicators and QA verification outcomes (Passed / Failed) feature authoritative contrast and recognizable iconography, replacing generic pastel chip soup.
+
+---
 
 ## Colors
-The palette is rooted in a professional **Deep Indigo** primary, chosen for its association with stability and technical authority. 
 
-- **Primary & Actions:** Use the primary indigo for main actions and brand moments.
-- **Surfaces:** Utilize a tiered gray system (Surface-Neutral). Backgrounds should remain `#FFFFFF` or `#F8FAFC` to ensure the content remains the focal point.
-- **Semantic Statuses:** These are functionally critical for QA workflows. Use semi-transparent background tints (10-15% opacity) with high-contrast text for badges to ensure readability without visual clutter.
-- **Priorities:** Defined by a warm-to-cold spectrum to allow users to scan backlogs instantly.
+The palette is anchored in authoritative deep slate and precision indigo (`#1E1B4B`), paired with pure functional neutrals and sharp semantic accents.
+
+- **Canvas & Surfaces:** Crisp neutral field (`#F8FAFC`) with pure white work surfaces (`#FFFFFF`) and slate-50 interactive hovers (`#F1F5F9`).
+- **Typography & High Contrast:** Primary text is set in high-contrast slate-900 (`#0F172A`), secondary metadata in slate-600 (`#475569`), and disabled/placeholder elements in slate-400 (`#94A3B8`). Never wash out functional text with pale grays on colored backgrounds.
+- **Borders & Dividers:** Defined 1px borders in slate-200 (`#E2E8F0`) provide crisp structural containment. Active, selected, or focused borders step up to slate-400 or brand indigo (`#4338CA`).
+- **Semantic Verification Signals:**
+  - **OPEN:** Neutral slate badge (`#475569` text on `#F1F5F9` background, 1px border `#E2E8F0`).
+  - **IN PROGRESS:** Focused sky/blue (`#0284C7` text on `#E0F2FE` background).
+  - **FOR TESTING:** Workbench violet (`#6366F1` text on `#EEF2FF` background).
+  - **PASSED:** Authoritative emerald (`#059669` text on `#ECFDF5` background).
+  - **FAILED:** High-visibility alert crimson (`#DC2626` text on `#FEF2F2` background).
+  - **DONE:** Quiet grounded slate (`#334155` text on `#F8FAFC` background).
+
+---
 
 ## Typography
-This design system utilizes **Inter** as the primary typeface due to its exceptional legibility in data-heavy SaaS interfaces. 
 
-- **Readability:** Body text uses a slightly increased line height (1.5x) to ensure long bug descriptions remain scannable.
-- **Technical Context:** **JetBrains Mono** is introduced for ticket IDs (e.g., TQA-101) and code snippets, providing a distinct visual "bracket" for technical data.
-- **Visual Hierarchy:** Use `FontWeight: 600` for interactive elements and `700` for page titles. Labels should use `12px` uppercase styling for secondary metadata to distinguish from primary body content.
+TrackQA pairs **Inter** for clean UI legibility with **JetBrains Mono** for technical data and identifiers.
 
-## Layout & Spacing
-The layout relies on a **Fluid Grid** for the main content area with a fixed sidebar for navigation. 
+- **Scale Ratio:** Fixed, high-contrast scale from `12px` (label/mono) up to `32px` (display hero).
+- **Prohibited Sizes:** No functional text under `12px`. Off-ramp sizes like `10px`, `11px`, or arbitrary `28px` must be replaced with the standard scale tokens (`label-md: 12px`, `code-xs: 12px`, `headline-lg: 24px`, `headline-xl: 32px`).
+- **Monospace Application:** Ticket IDs (`TQA-42`), hash commits, build numbers, device OS versions, and kbd shortcuts are set strictly in `JetBrains Mono` (`code-sm: 13px` / `code-xs: 12px`).
+- **Headings & Body:** Headings use semi-bold (`font-weight: 600`) or bold (`700`) with tight tracking (`-0.01em` to `-0.02em`). Body copy maintains `14px` (`body-md`) and `16px` (`body-lg`) at `1.5` line height for effortless scanning.
 
-- **Grid:** Use a 12-column grid system for complex dashboard layouts. On desktop, side margins are `24px`.
-- **Rhythm:** Spacing follows a 4px baseline. Components should generally use `md (16px)` padding internally, while section spacing should use `xl (48px)`.
-- **Responsive:** On tablet, gutters reduce to `16px`. On mobile, all cards become full-width with `16px` horizontal margins and vertical stacking.
+---
+
+## Layout
+
+The application employs a disciplined **Fixed Workbench Grid** with an anchored left rail (280px desktop) and fluid data-dense main canvas.
+
+- **Baseline Spacing:** Built on a 4px baseline grid (`xs: 4px`, `sm: 8px`, `md: 16px`, `lg: 24px`, `xl: 32px`).
+- **Tabular Priority:** Lists and backlogs default to dense table layouts with sticky headers, explicit column widths, and hover highlights.
+- **Gutter & Margins:** Desktop canvas gutters are `24px` (`px-lg py-lg`); tablet and mobile gutter steps down to `16px` (`px-md`).
+- **Responsive Stacking:** On mobile (`< 768px`), tabular backlogs collapse into scannable stacked cards without losing ticket ID hierarchy or verification status.
+
+---
 
 ## Elevation & Depth
-This design system utilizes **Low-Contrast Outlines** combined with **Ambient Shadows**. 
 
-- **Flat Surfaces:** Most containers (sidebars, secondary panels) are flat with a `1px` border in `#E2E8F0`.
-- **Raised Elements:** Use a single level of elevation for interactive cards and modals. Shadows should be highly diffused: `box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)`.
-- **Active State:** When an item is dragged or focused, use a subtle `2px` indigo ring rather than increasing shadow depth to maintain the minimalist aesthetic.
+TrackQA is a **Flat-Plus Workbench**: depth is communicated through tonal contrast and crisp 1px structural outlines rather than heavy drop shadows.
+
+- **No Diffuse Shadows Paired with Hairlines:** Eliminates the classic AI tell of a thin border accompanied by a 10px blurred drop shadow. Surfaces are either cleanly bounded by `1px solid #E2E8F0` or tonally elevated.
+- **Interactive States:** Lift and interactivity are indicated by subtle surface shifts (`hover:bg-slate-50`) or crisp focus rings (`focus:ring-2 focus:ring-indigo-600/20`), never dramatic card scale transforms.
+- **Modals & Overlays:** Floating dialogs and popovers use a single ambient elevation (`box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04)`) with a crisp `1px` outer border.
+
+---
 
 ## Shapes
-The shape language is friendly but professional. 
 
-- **Standard Elements:** Buttons, inputs, and cards use the `rounded-md (0.5rem)` setting.
-- **Status Badges:** Use `rounded-full` (pill shape) to differentiate statuses from clickable buttons.
-- **Interactive Indicators:** Checkboxes and small icons should use `rounded (0.25rem)` to retain a sharper, more precise look.
+- **Controls & Buttons:** Rounded with a disciplined `6px` radius (`rounded-md`).
+- **Containers & Panels:** Bounded with an `8px` or `12px` radius (`rounded-lg`).
+- **Status Badges & Chips:** Compact pill shape (`rounded-full`) with `12px` typography, used strictly for status tags, roles, and count indicators to clearly distinguish them from actionable buttons.
+- **Extreme Roundings Banned:** No 20px+ rounded corners on cards, containers, or input fields.
+
+---
 
 ## Components
-- **Buttons:** Primary buttons use the indigo background with white text and a subtle bottom-heavy shadow. Secondary buttons use a white background with a `1px` gray border.
-- **Status Badges:** Use a "Soft Tint" style. For example, the `FAILED` badge uses a light rose background (`#FFF1F2`) with `rose-700` text.
-- **Input Fields:** Use a white background, `1px` border in `Slate-200`, and an Indigo `2px` focus ring. Placeholder text should be `Slate-400`.
-- **Cards:** White background, `1px` border in `Slate-200`, and `rounded-lg` corners. Card headers should have a subtle bottom border to separate metadata from content.
-- **Priority Icons:** Use a consistent geometric shape (e.g., a vertical bar or chevron) colored according to the Priority tokens to provide an immediate visual cue in list views.
-- **Lists:** Issue lists should have a hover state that changes the background to `Slate-50` to indicate row-level interactivity.
+
+### Buttons
+- **Primary:** Solid deep indigo (`#1E1B4B`), white text, `6px` radius, hover state (`#312E81`). No gradient backgrounds or glowing drop shadows.
+- **Secondary / Ghost:** White surface, `1px solid #E2E8F0`, slate-700 text, hover state (`#F1F5F9`).
+- **Danger / Fail:** Crimson text or background (`#DC2626`) for destructive or failing QA sign-off actions.
+
+### Ticket & Issue Rows
+- **Layout:** High-density row with monospace ticket key (`font-mono text-code-sm font-semibold`), clear title, status badge, priority icon, and assignee avatar.
+- **Hover:** Clean transition to `#F8FAFC` row background with immediate cursor pointer affordance.
+
+### Verification Verdicts
+- **QA Sign-Off Cards:** Prominent two-state action (Pass / Fail) with mandatory failure justification, repro environment specs, and attachment dropzones.
+
+### Form Inputs
+- **Base:** White background, `1px solid #CBD5E1`, `6px` radius, `14px` body text.
+- **Focus:** Crisp `2px` ring in `#4338CA` with zero layout shift.
+
+---
+
+## Do's and Don'ts
+
+### Do's
+- **DO** use `JetBrains Mono` for all ticket numbers, access codes, and environment specifications.
+- **DO** keep data rows and tables dense and easily scannable with keyboard navigation support.
+- **DO** ensure all text complies with WCAG AA 4.5:1 contrast requirements.
+- **DO** use exact scale tokens (`label-md: 12px`, `code-sm: 13px`, `body-md: 14px`).
+- **DO** structure repro steps and QA verification results as first-class, verifiable fields.
+
+### Don'ts (AI Slop Anti-Patterns to Eliminate)
+- **DON'T** stack floating icon containers directly above section headers (e.g. the icon-in-a-box above `Create New Project`).
+- **DON'T** use purple-to-blue gradient fills, glow effects, or background radial halos.
+- **DON'T** combine hairline borders with wide, blurry drop shadows on cards.
+- **DON'T** nest cards inside cards inside cards (Cardocalypse). Flatten containers with whitespace and 1px dividers.
+- **DON'T** use 4 identical formulaic metric cards with an icon top-right and oversized number below.
+- **DON'T** use off-ramp font sizes (`10px`, `11px`, `28px`).
+- **DON'T** write generic SaaS marketing filler ("frictionless", "supercharge", "empower"). Be direct and technical.

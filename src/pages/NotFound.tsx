@@ -41,13 +41,13 @@ function NotFound() {
           <LayoutGrid size={18} />
           Back to Dashboard
         </Link>
-        <a
-          href="#"
+        <Link
+          to="/support"
           className="flex items-center gap-xs rounded-md bg-surface-container-lowest px-md py-sm text-body-md font-semibold text-on-surface hover:bg-surface-container-low"
         >
           <HelpCircle size={18} />
           Visit Support
-        </a>
+        </Link>
       </div>
     </div>
   )

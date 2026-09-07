@@ -33,3 +33,14 @@ supabase/.temp/
 *.njsproj
 *.sln
 *.sw?
+
+# Agent & AI tool configs
+.agent/
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.impeccable/
+.kiro/
+.opencode/

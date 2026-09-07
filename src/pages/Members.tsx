@@ -5,7 +5,6 @@ import {
   Copy,
   KeyRound,
   LogOut,
-  RotateCw,
   Search,
   UserMinus,
   UserPlus,
@@ -17,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
 import Sidebar from '../components/Sidebar'
+import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { useRealtimeSync } from '../hooks/useRealtimeSync'
@@ -41,10 +41,19 @@ function timeAgo(iso: string) {
   return `${days}d ago`
 }
 
-const roleTone: Record<ProjectRole, string> = {
-  OWNER: 'bg-primary-fixed text-on-primary-fixed',
-  DEVELOPER: 'bg-surface-container text-on-surface-variant',
-  QA: 'bg-purple-200 text-purple-900',
+const roleBadgeConfig: Record<ProjectRole, { label: string; className: string }> = {
+  OWNER: {
+    label: 'OWNER',
+    className: 'border-primary/30 bg-primary-fixed/30 text-primary',
+  },
+  DEVELOPER: {
+    label: 'DEV',
+    className: 'border-outline-variant bg-surface-container-low text-on-surface',
+  },
+  QA: {
+    label: 'QA LAB',
+    className: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
 }
 
 type MemberRow = MemberListItem
@@ -115,7 +124,6 @@ function Members() {
         setLoading(false)
       }
 
-      // Prefetch notifications while on Members page
       if (user?.id) {
         prefetchNotificationsData(user.id)
       }
@@ -149,8 +157,13 @@ function Members() {
   const handleRoleChange = async (userId: string, role: ProjectRole) => {
     if (!currentProject || !isOwner) return
     setActionError(null)
-    const prevRole = members.find((m) => m.user_id === userId)?.role
-    setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)))
+
+    const previousRole = members.find((m) => m.user_id === userId)?.role
+
+    // Optimistic UI update
+    setMembers((prev) =>
+      prev.map((m) => (m.user_id === userId ? { ...m, role } : m)),
+    )
 
     const { error } = await supabase
       .from('project_members')
@@ -159,21 +172,23 @@ function Members() {
       .eq('user_id', userId)
 
     if (error) {
-      setMembers((prev) =>
-        prev.map((m) => (m.user_id === userId ? { ...m, role: prevRole ?? m.role } : m)),
-      )
+      if (previousRole) {
+        setMembers((prev) =>
+          prev.map((m) => (m.user_id === userId ? { ...m, role: previousRole } : m)),
+        )
+      }
       setActionError(error.message)
     } else {
       invalidateMembersCache(currentProject.id)
     }
   }
 
-  const handleRemove = (userId: string, memberName: string) => {
+  const handleRemove = (userId: string, name: string) => {
     if (!currentProject || !isOwner) return
     setConfirmModal({
       open: true,
       title: 'Remove Member',
-      description: `Are you sure you want to remove ${memberName} from this project? They will immediately lose access to all project issues.`,
+      description: `Are you sure you want to remove ${name} from this project? They will lose access immediately.`,
       confirmLabel: 'Remove Member',
       variant: 'danger',
       onConfirm: async () => {
@@ -192,7 +207,7 @@ function Members() {
           return
         }
         invalidateMembersCache(currentProject.id)
-        load()
+        setMembers((prev) => prev.filter((m) => m.user_id !== userId))
       },
     })
   }
@@ -201,9 +216,9 @@ function Members() {
     if (!currentProject || !user) return
     setConfirmModal({
       open: true,
-      title: 'Leave Workspace',
+      title: 'Leave Project',
       description: `Are you sure you want to leave "${currentProject.name}"? You will lose access until you are re-invited.`,
-      confirmLabel: 'Leave Workspace',
+      confirmLabel: 'Leave Project',
       variant: 'danger',
       onConfirm: async () => {
         setConfirmModal((prev) => ({ ...prev, isLoading: true }))
@@ -289,56 +304,65 @@ function Members() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="flex-1 py-lg">
-        <div className="mb-lg flex items-start justify-between gap-md px-lg">
-          <div>
-            <h1 className="text-headline-xl font-bold text-on-surface">
-              Members
-            </h1>
-            <p className="mt-xs text-body-lg text-on-surface-variant">
-              Manage your team and their roles across the project.
-            </p>
-          </div>
-          {isOwner && (
-            <button
-              type="button"
-              onClick={() => setInviteOpen((v) => !v)}
-              className="flex shrink-0 items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-            >
-              <UserPlus size={16} />
-              Invite Member
-            </button>
-          )}
-        </div>
+      <div className="flex flex-1 flex-col min-w-0">
+        <TopBar />
 
-        {!isOwner && (
-          <p className="mx-lg mb-lg rounded-md bg-surface-container-low px-md py-sm text-body-md text-on-surface-variant">
-            Only the project owner can invite, change roles, or remove other
-            members. You can still leave the project yourself.
-          </p>
-        )}
-
-        {isOwner && currentProject?.access_code && (
-          <div className="mb-lg flex flex-wrap items-center justify-between gap-md border-y border-outline-variant px-lg py-md">
-            <div className="flex items-center gap-sm">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary">
-                <KeyRound size={20} />
+        <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          {/* Header Bar */}
+          <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-xs">
+                <span className="rounded bg-primary-fixed px-xs py-0.5 font-mono text-code-xs font-bold text-on-primary-fixed uppercase tracking-wider">
+                  [{currentProject?.key ?? 'QA'}]
+                </span>
+                <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">
+                  Team Personnel
+                </h1>
               </div>
-              <div>
-                <p className="text-body-md font-semibold text-on-surface">
-                  Project Access Code
-                </p>
-                <p className="text-label-md text-on-surface-variant">
-                  Teammates can use this code to join this project directly on the Join Workspace page.
-                </p>
-              </div>
+              <p className="mt-xs text-body-md text-on-surface-variant">
+                Manage project operators, development assignees, and QA lab permissions.
+              </p>
             </div>
 
-            <div className="flex items-center rounded-md border border-outline-variant bg-surface-container-low pl-md pr-xs py-[6px]">
-              <span className="font-mono text-body-lg font-bold tracking-wider text-primary mr-sm">
-                {currentProject.access_code}
-              </span>
-              <div className="relative group">
+            {isOwner && (
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="inline-flex shrink-0 items-center gap-xs rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
+              >
+                <UserPlus size={16} />
+                <span>Invite Member</span>
+              </button>
+            )}
+          </div>
+
+          {!isOwner && (
+            <div className="mb-md rounded-lg border border-outline-variant bg-surface-container-low p-sm text-body-md text-on-surface-variant">
+              You are viewing this project as an operator. Only the project owner can invite or modify member roles.
+            </div>
+          )}
+
+          {/* Project Access Code Workbench Card */}
+          {isOwner && currentProject?.access_code && (
+            <div className="mb-md flex flex-wrap items-center justify-between gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+              <div className="flex items-center gap-sm">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-primary/30 bg-primary-fixed/30 text-primary">
+                  <KeyRound size={16} />
+                </div>
+                <div>
+                  <p className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                    Project Access Code
+                  </p>
+                  <p className="font-mono text-code-xs text-on-surface-variant">
+                    Operators can enter this code on the Join Project bench to enroll directly.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center rounded border border-outline-variant bg-surface-container-low pl-md pr-xs py-1">
+                <span className="font-mono text-code-sm font-bold tracking-wider text-primary mr-sm">
+                  {currentProject.access_code}
+                </span>
                 <button
                   type="button"
                   onClick={handleCopyCode}
@@ -346,216 +370,225 @@ function Members() {
                   className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-container transition-colors text-on-surface-variant hover:text-on-surface"
                 >
                   {copiedCode ? (
-                    <Check size={16} className="text-emerald-600" />
+                    <Check size={14} className="text-emerald-600" />
                   ) : (
-                    <Copy size={16} />
+                    <Copy size={14} />
                   )}
                 </button>
-                <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-inverse-surface px-xs py-[2px] text-label-md text-inverse-on-surface opacity-0 shadow-xs transition-opacity group-hover:opacity-100 z-10">
-                  {copiedCode ? 'Copied!' : 'Copy code'}
-                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {actionError && (
-          <p className="mx-lg mb-lg rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
-            {actionError}
-          </p>
-        )}
+          {actionError && (
+            <div className="mb-md rounded-md border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">
+              {actionError}
+            </div>
+          )}
 
-        <div className="mb-md flex flex-wrap items-center gap-sm border-y border-outline-variant px-lg py-md">
-          <div className="flex min-w-[280px] flex-1 items-center gap-sm rounded-md border border-outline-variant px-md py-sm">
-            <Search className="text-outline" size={18} />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search members..."
-              className="flex-1 bg-transparent text-body-lg text-on-surface outline-none placeholder:text-outline"
-            />
-          </div>
-          <div className="relative">
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as ProjectRole | '')}
-              className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-sm pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low"
-            >
-              <option value="">All Roles</option>
-              <option value="OWNER">Owner</option>
-              <option value="DEVELOPER">Developer</option>
-              <option value="QA">QA</option>
-            </select>
-            <ChevronDown
-              className="pointer-events-none absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant"
-              size={16}
-            />
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="mx-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-lg text-on-surface-variant">
-            Loading…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex min-h-[50vh] items-center justify-center px-lg text-center text-body-lg text-on-surface-variant">
-            No members match these filters.
-          </div>
-        ) : (
-          <div className="border-t border-outline-variant">
-            <div className="hidden border-b border-outline-variant px-lg py-sm text-label-md font-semibold uppercase tracking-wide text-on-surface-variant lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(120px,0.6fr)_minmax(90px,0.5fr)_64px] lg:items-center lg:gap-md">
-              <span className="min-w-0 truncate">Member</span>
-              <span className="min-w-0 truncate">Email</span>
-              <span className="min-w-0 truncate">Role</span>
-              <span className="min-w-0 truncate">Assigned Issues</span>
-              <span className="min-w-0 truncate text-right">Actions</span>
+          {/* Filter Bar */}
+          <div className="mb-md flex flex-wrap items-center gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-sm">
+            <div className="flex min-w-[240px] flex-1 items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md focus-within:border-primary transition-colors">
+              <Search size={16} className="text-outline shrink-0" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search member name or email…"
+                className="w-full bg-transparent text-on-surface outline-none placeholder:text-outline"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="text-outline hover:text-on-surface"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
-            {filtered.map((member) => {
-              const leaveButton = member.user_id === user?.id && member.role !== 'OWNER' && (
-                <button
-                  type="button"
-                  aria-label="Leave project"
-                  onClick={handleLeave}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
-                >
-                  <LogOut size={18} />
-                </button>
-              )
-              const removeButton = member.user_id !== user?.id && isOwner && (
-                <button
-                  type="button"
-                  aria-label={`Remove ${member.full_name ?? member.email}`}
-                  onClick={() => handleRemove(member.user_id, member.full_name ?? member.email)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
-                >
-                  <UserMinus size={18} />
-                </button>
-              )
-              const roleBadge = isOwner ? (
-                <span className={`inline-flex rounded-full ${roleTone[member.role]}`}>
-                  <select
-                    value={member.role}
-                    onChange={(e) => handleRoleChange(member.user_id, e.target.value as ProjectRole)}
-                    className="appearance-none bg-transparent px-md py-xs text-label-md font-semibold outline-none"
-                  >
-                    <option value="OWNER">Project Owner</option>
-                    <option value="DEVELOPER">Developer</option>
-                    <option value="QA">QA</option>
-                  </select>
-                </span>
-              ) : (
-                <span
-                  className={`inline-flex rounded-full px-md py-xs text-label-md font-semibold ${roleTone[member.role]}`}
-                >
-                  {member.role === 'OWNER' ? 'Project Owner' : member.role}
-                </span>
-              )
+            <div className="relative">
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as ProjectRole | '')}
+                className="appearance-none rounded border border-outline-variant bg-surface-container-low py-xs pl-sm pr-lg text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors outline-none"
+              >
+                <option value="">All Roles</option>
+                <option value="OWNER">Owner</option>
+                <option value="DEVELOPER">Developer</option>
+                <option value="QA">QA Lab</option>
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute right-xs top-1/2 -translate-y-1/2 text-on-surface-variant"
+                size={13}
+              />
+            </div>
+          </div>
 
-              return (
-                <div key={member.user_id}>
-                  {/* Mobile card */}
-                  <div className="border-b border-outline-variant p-lg hover:bg-surface-container-low lg:hidden">
-                    <div className="flex items-start gap-sm">
-                      <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} className="shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-body-md font-semibold text-on-surface">
-                          {member.full_name ?? 'Unnamed'}
-                        </p>
-                        <p className="truncate text-label-md text-on-surface-variant">{member.email}</p>
-                      </div>
-                      {roleBadge}
-                    </div>
-                    <div className="mt-sm flex items-center justify-between gap-sm text-label-md text-on-surface-variant">
-                      <span>{member.assigned_issues} assigned issue{member.assigned_issues === 1 ? '' : 's'}</span>
-                      {(leaveButton || removeButton) && <div>{leaveButton || removeButton}</div>}
-                    </div>
-                  </div>
-
-                  {/* Desktop row */}
-                  <div className="hidden border-b border-outline-variant px-lg py-md hover:bg-surface-container-low lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(120px,0.6fr)_minmax(90px,0.5fr)_64px] lg:items-center lg:gap-md">
-                    <div className="flex min-w-0 items-center gap-sm">
-                      <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} className="shrink-0" />
-                      <span className="min-w-0 truncate text-body-md font-semibold text-on-surface xl:text-body-lg">
-                        {member.full_name ?? 'Unnamed'}
-                      </span>
-                    </div>
-                    <span className="min-w-0 truncate text-body-md text-on-surface-variant xl:text-body-lg">{member.email}</span>
-                    <div className="min-w-0">{roleBadge}</div>
-                    <span className="min-w-0 text-body-md text-on-surface xl:text-body-lg">{member.assigned_issues}</span>
-                    <div className="min-w-0 text-right">{leaveButton || removeButton}</div>
-                  </div>
+          {/* Members Table */}
+          <div className="rounded-lg border border-outline-variant bg-surface-container-lowest overflow-hidden">
+            {loading ? (
+              <div className="p-xl text-center text-body-md text-on-surface-variant font-mono">
+                Loading personnel roster…
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex min-h-[280px] flex-col items-center justify-center p-xl text-center">
+                <p className="text-headline-md font-semibold text-on-surface">No members found</p>
+                <p className="mt-xs text-body-md text-on-surface-variant">
+                  No teammates match the specified search or filter criteria.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Desktop Table Header */}
+                <div className="hidden border-b border-outline-variant bg-surface-container-low px-md py-xs font-mono text-code-xs font-bold uppercase tracking-wider text-on-surface-variant lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(140px,0.8fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:gap-sm">
+                  <span>Operator</span>
+                  <span>Email Address</span>
+                  <span>Assigned Role</span>
+                  <span>Active Queue</span>
+                  <span className="text-right">Action</span>
                 </div>
-              )
-            })}
-          </div>
-        )}
 
-        <div className="mt-md flex items-center justify-between px-lg">
-          <p className="text-body-md text-on-surface-variant">
-            Showing 1 to {filtered.length} of {members.length} members
-          </p>
-          <div className="flex gap-sm">
-            <button
-              type="button"
-              disabled
-              className="rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-outline disabled:cursor-not-allowed"
-            >
-              Prev
-            </button>
-            <button
-              type="button"
-              disabled
-              className="rounded-md border border-outline-variant px-md py-sm text-body-md font-medium text-outline disabled:cursor-not-allowed"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+                <div className="divide-y divide-outline-variant">
+                  {filtered.map((member) => {
+                    const roleInfo = roleBadgeConfig[member.role]
+                    const leaveButton = member.user_id === user?.id && member.role !== 'OWNER' && (
+                      <button
+                        type="button"
+                        aria-label="Leave project"
+                        onClick={handleLeave}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
+                        title="Leave project"
+                      >
+                        <LogOut size={16} />
+                      </button>
+                    )
+                    const removeButton = member.user_id !== user?.id && isOwner && (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${member.full_name ?? member.email}`}
+                        onClick={() => handleRemove(member.user_id, member.full_name ?? member.email)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
+                        title="Remove member"
+                      >
+                        <UserMinus size={16} />
+                      </button>
+                    )
 
-        {isOwner && pendingInvitations.length > 0 && (
-          <div className="mx-lg mt-lg rounded-lg border border-outline-variant bg-surface-container-lowest shadow-raised">
-            <div className="border-b border-outline-variant px-lg py-md">
-              <h2 className="text-headline-md font-semibold text-on-surface">
-                Pending Invitations
-              </h2>
-            </div>
-            <ul>
-              {pendingInvitations.map((invitation) => (
-                <li
-                  key={invitation.id}
-                  className="flex items-center justify-between gap-md border-t border-outline-variant px-lg py-md first:border-t-0"
-                >
-                  <div>
-                    <p className="text-body-lg font-semibold text-on-surface">
-                      {invitation.email}
-                    </p>
-                    <div className="mt-xs flex items-center gap-sm text-body-md text-on-surface-variant">
-                      <span className={`rounded-full px-sm py-[2px] text-label-md font-semibold ${roleTone[invitation.role]}`}>
-                        {invitation.role}
-                      </span>
-                      <span className="flex items-center gap-xs">
-                        <Clock size={14} />
-                        Sent {timeAgo(invitation.created_at)}
-                      </span>
+                    return (
+                      <div
+                        key={member.user_id}
+                        className="p-sm hover:bg-surface-container-low/50 transition-colors lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(140px,0.8fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:gap-sm lg:px-md"
+                      >
+                        <div className="flex min-w-0 items-center gap-xs">
+                          <Avatar
+                            name={member.full_name}
+                            avatarUrl={member.avatar_url}
+                            size={28}
+                            className="shrink-0"
+                          />
+                          <span className="min-w-0 truncate text-body-md font-semibold text-on-surface">
+                            {member.full_name ?? 'Unnamed'}
+                            {member.user_id === user?.id && (
+                              <span className="ml-xs font-mono text-code-xs text-outline">
+                                (You)
+                              </span>
+                            )}
+                          </span>
+                        </div>
+
+                        <span className="min-w-0 truncate font-mono text-code-xs text-on-surface-variant">
+                          {member.email}
+                        </span>
+
+                        <div>
+                          {isOwner && member.user_id !== user?.id ? (
+                            <div className="relative inline-block">
+                              <select
+                                value={member.role}
+                                onChange={(e) =>
+                                  handleRoleChange(member.user_id, e.target.value as ProjectRole)
+                                }
+                                className={`appearance-none rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase outline-none pr-5 ${roleInfo.className}`}
+                              >
+                                <option value="DEVELOPER">DEV</option>
+                                <option value="QA">QA LAB</option>
+                                <option value="OWNER">OWNER</option>
+                              </select>
+                              <ChevronDown
+                                size={11}
+                                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-70"
+                              />
+                            </div>
+                          ) : (
+                            <span
+                              className={`inline-block rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}
+                            >
+                              {roleInfo.label}
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="font-mono text-code-xs text-on-surface">
+                          {member.assigned_issues} tickets
+                        </span>
+
+                        <div className="text-right">{leaveButton || removeButton}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Pending Invitations Ledger */}
+          {isOwner && pendingInvitations.length > 0 && (
+            <div className="mt-md rounded-lg border border-outline-variant bg-surface-container-lowest overflow-hidden">
+              <div className="border-b border-outline-variant bg-surface-container-low px-md py-xs">
+                <h2 className="font-mono text-code-xs font-bold uppercase tracking-wider text-on-surface">
+                  Pending Invitations ({pendingInvitations.length})
+                </h2>
+              </div>
+              <div className="divide-y divide-outline-variant">
+                {pendingInvitations.map((invitation) => {
+                  const roleInfo = roleBadgeConfig[invitation.role]
+                  return (
+                    <div
+                      key={invitation.id}
+                      className="flex items-center justify-between gap-sm p-sm px-md hover:bg-surface-container-low/50 transition-colors"
+                    >
+                      <div>
+                        <p className="font-mono text-code-sm font-semibold text-on-surface">
+                          {invitation.email}
+                        </p>
+                        <div className="mt-xs flex items-center gap-xs font-mono text-code-xs text-outline">
+                          <span
+                            className={`rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}
+                          >
+                            {roleInfo.label}
+                          </span>
+                          <span className="flex items-center gap-0.5">
+                            <Clock size={11} />
+                            Sent {timeAgo(invitation.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={cancelingId === invitation.id}
+                        onClick={() => handleCancelInvite(invitation.id, invitation.email)}
+                        className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-mono text-code-xs font-semibold text-error hover:bg-rose-500/10 hover:border-rose-500/30 transition-colors disabled:opacity-50"
+                      >
+                        {cancelingId === invitation.id ? 'Canceling…' : 'Cancel'}
+                      </button>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={cancelingId === invitation.id}
-                    onClick={() =>
-                      handleCancelInvite(invitation.id, invitation.email)
-                    }
-                    className="shrink-0 rounded-md border border-outline-variant px-md py-sm text-body-md font-semibold text-on-surface hover:bg-surface-container-low disabled:opacity-60"
-                  >
-                    {cancelingId === invitation.id ? 'Canceling…' : 'Cancel'}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </main>
       </div>
 
       {/* Invite Member Modal */}
@@ -564,9 +597,8 @@ function Members() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="invite-modal-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-md"
+          className="fixed inset-0 z-50 flex items-center justify-center p-md bg-black/50 animate-in fade-in duration-100"
         >
-          {/* Subtle Backdrop */}
           <div
             onClick={() => {
               if (!inviting) {
@@ -574,22 +606,20 @@ function Members() {
                 setInviteError(null)
               }
             }}
-            className="fixed inset-0 bg-black/30 backdrop-blur-[1px] transition-opacity"
+            className="fixed inset-0"
           />
 
-          {/* Minimal Card */}
-          <div className="relative z-10 w-full max-w-[420px] rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-lg">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-sm">
+          <div className="relative z-10 w-full max-w-[440px] rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-sm">
+            <div className="flex items-start justify-between gap-xs border-b border-outline-variant pb-xs">
               <div>
                 <h2
                   id="invite-modal-title"
-                  className="text-headline-md font-semibold text-on-surface"
+                  className="text-headline-md font-bold text-on-surface"
                 >
                   Invite Team Member
                 </h2>
-                <p className="mt-xs text-body-md text-on-surface-variant">
-                  Send an email invitation to join this project workspace.
+                <p className="font-mono text-code-xs text-on-surface-variant">
+                  Dispatches an enrollment link for project [{currentProject?.key}].
                 </p>
               </div>
               <button
@@ -599,61 +629,49 @@ function Members() {
                   setInviteOpen(false)
                   setInviteError(null)
                 }}
-                aria-label="Close dialog"
-                className="-mr-xs -mt-xs rounded p-xs text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface disabled:opacity-50 transition-colors"
+                className="rounded p-xs text-outline hover:bg-surface-container hover:text-on-surface transition-colors"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleInvite} className="mt-md flex flex-col gap-md">
-              {inviteError && (
-                <p className="rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
-                  {inviteError}
-                </p>
-              )}
+            {inviteError && (
+              <p className="mt-sm rounded border border-rose-500/30 bg-rose-500/10 p-xs text-body-md text-rose-800 dark:text-rose-300">
+                {inviteError}
+              </p>
+            )}
 
+            <form onSubmit={handleInvite} className="mt-md space-y-sm">
               <div>
-                <label
-                  htmlFor="inviteEmail"
-                  className="mb-xs block text-body-md font-medium text-on-surface"
-                >
-                  Email address
+                <label className="mb-xs block text-label-md font-bold text-on-surface">
+                  Email Address <span className="text-error">*</span>
                 </label>
                 <input
-                  id="inviteEmail"
                   type="email"
                   required
-                  autoFocus
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="Email ni tropa"
-                  className="w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
+                  placeholder="operator@company.com"
+                  className="w-full rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="inviteRole"
-                  className="mb-xs block text-body-md font-medium text-on-surface"
-                >
-                  Role
+                <label className="mb-xs block text-label-md font-bold text-on-surface">
+                  Assigned Project Role
                 </label>
                 <select
-                  id="inviteRole"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as ProjectRole)}
-                  className="w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-colors"
+                  className="w-full rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md font-semibold text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                 >
-                  <option value="DEVELOPER">Developer</option>
-                  <option value="QA">QA</option>
-                  <option value="OWNER">Project Owner</option>
+                  <option value="DEVELOPER">Developer (Fixes defects & submits builds)</option>
+                  <option value="QA">QA Lab (Executes repro steps & verifies fixes)</option>
+                  <option value="OWNER">Project Owner (Full administrative permissions)</option>
                 </select>
               </div>
 
-              {/* Action Buttons */}
-              <div className="mt-sm flex items-center justify-end gap-sm">
+              <div className="flex justify-end gap-xs pt-xs">
                 <button
                   type="button"
                   disabled={inviting}
@@ -661,17 +679,16 @@ function Members() {
                     setInviteOpen(false)
                     setInviteError(null)
                   }}
-                  className="rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-body-md font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-60 transition-colors"
+                  className="rounded border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={inviting || !inviteEmail.trim()}
-                  className="flex items-center justify-center gap-xs rounded-md bg-primary px-md py-xs text-body-md font-medium text-on-primary hover:bg-primary-container disabled:opacity-60 transition-colors shadow-xs"
+                  className="rounded bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
                 >
-                  {inviting && <RotateCw size={14} className="animate-spin" />}
-                  {inviting ? 'Sending…' : 'Send Invite'}
+                  {inviting ? 'Dispatching…' : 'Send Invitation'}
                 </button>
               </div>
             </form>

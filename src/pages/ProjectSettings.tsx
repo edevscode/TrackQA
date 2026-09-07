@@ -15,6 +15,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
 import Sidebar from '../components/Sidebar'
+import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { useRealtimeSync } from '../hooks/useRealtimeSync'
@@ -31,6 +32,21 @@ import type { ProjectRole } from '../lib/database.types'
 const tabs = ['General', 'Member Roles', 'Danger Zone']
 
 type MemberRow = ProjectSettingsMember
+
+const roleBadgeConfig: Record<ProjectRole, { label: string; className: string }> = {
+  OWNER: {
+    label: 'OWNER',
+    className: 'border-primary/30 bg-primary-fixed/30 text-primary',
+  },
+  DEVELOPER: {
+    label: 'DEV',
+    className: 'border-outline-variant bg-surface-container-low text-on-surface',
+  },
+  QA: {
+    label: 'QA LAB',
+    className: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+}
 
 function ProjectSettings() {
   const navigate = useNavigate()
@@ -99,7 +115,6 @@ function ProjectSettings() {
       const rows = await fetchProjectSettingsData(currentProject.id, { forceRefresh })
       setMembers(rows)
 
-      // Prefetch Account Settings while on Project Settings page
       if (user?.id) {
         prefetchAccountSettingsData(user.id)
       }
@@ -157,20 +172,25 @@ function ProjectSettings() {
     if (!currentProject || !isOwner) return
     setConfirmModal({
       open: true,
-      title: 'Remove Member',
-      description: `Are you sure you want to remove ${memberName} from this project? They will immediately lose access to all issues and project data.`,
+      title: 'Remove Team Member',
+      description: `Are you sure you want to remove ${memberName} from this project? They will immediately lose access.`,
       confirmLabel: 'Remove Member',
       variant: 'danger',
       onConfirm: async () => {
         setConfirmModal((prev) => ({ ...prev, isLoading: true }))
-        setMembers((prev) => prev.filter((m) => m.user_id !== userId))
-        invalidateProjectSettingsCache(currentProject.id)
-        await supabase
+        const { error } = await supabase
           .from('project_members')
           .delete()
           .eq('project_id', currentProject.id)
           .eq('user_id', userId)
+
         setConfirmModal((prev) => ({ ...prev, open: false, isLoading: false }))
+        if (error) {
+          setDangerError(error.message)
+          return
+        }
+        invalidateProjectSettingsCache(currentProject.id)
+        setMembers((prev) => prev.filter((m) => m.user_id !== userId))
       },
     })
   }
@@ -182,38 +202,26 @@ function ProjectSettings() {
     setTimeout(() => setCopiedCode(false), 2000)
   }
 
-  const handleRegenerateCode = () => {
+  const handleRegenerateCode = async () => {
     if (!currentProject || !isOwner) return
-    setConfirmModal({
-      open: true,
-      title: 'Regenerate Access Code',
-      description:
-        'Are you sure you want to regenerate the project access code? The previous code will immediately stop working and cannot be restored.',
-      confirmLabel: 'Regenerate Code',
-      variant: 'warning',
-      icon: <RotateCw size={22} className="text-amber-600" />,
-      onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, isLoading: true }))
-        setRegeneratingCode(true)
-        setAccessCodeError(null)
-        setAccessCodeSuccess(null)
+    setRegeneratingCode(true)
+    setAccessCodeError(null)
+    setAccessCodeSuccess(null)
 
-        const { error } = await supabase.rpc('regenerate_project_access_code', {
-          p_project_id: currentProject.id,
-        })
-
-        setRegeneratingCode(false)
-        setConfirmModal((prev) => ({ ...prev, open: false, isLoading: false }))
-        if (error) {
-          setAccessCodeError(error.message)
-          return
-        }
-
-        invalidateProjectSettingsCache(currentProject.id)
-        setAccessCodeSuccess('Project access code regenerated successfully.')
-        await refreshProjects()
-      },
+    const { data: newCode, error } = await supabase.rpc('regenerate_project_access_code', {
+      p_project_id: currentProject.id,
     })
+
+    setRegeneratingCode(false)
+    if (error || !newCode) {
+      setAccessCodeError(error?.message ?? 'Failed to regenerate code')
+      return
+    }
+
+    setAccessCodeSuccess('New project access code generated successfully.')
+    invalidateProjectCache(currentProject.id)
+    await refreshProjects()
+    setTimeout(() => setAccessCodeSuccess(null), 3000)
   }
 
   const handleArchive = () => {
@@ -221,7 +229,7 @@ function ProjectSettings() {
     setConfirmModal({
       open: true,
       title: 'Archive Project',
-      description: `Are you sure you want to archive "${currentProject.name}"? It will be hidden from your active projects list, but can be restored anytime from the Archived Projects Hub.`,
+      description: `Are you sure you want to archive "${currentProject.name}"? It will be hidden from active navigation and set to read-only mode. You can restore it anytime.`,
       confirmLabel: 'Archive Project',
       variant: 'warning',
       onConfirm: async () => {
@@ -245,7 +253,7 @@ function ProjectSettings() {
           setCurrentProjectId(remaining[0].id)
           navigate('/dashboard')
         } else {
-          navigate('/projects/archived')
+          navigate('/welcome')
         }
       },
     })
@@ -256,8 +264,8 @@ function ProjectSettings() {
     setConfirmModal({
       open: true,
       title: 'Delete Project Permanently',
-      description: `Are you sure you want to permanently delete "${currentProject.name}"? All associated issues, comments, attachments, and history will be destroyed forever. This action cannot be undone.`,
-      confirmLabel: 'Delete Project',
+      description: `Are you sure you want to permanently delete "${currentProject.name}"? All associated issues, comments, attachments, and QA logs will be destroyed forever.`,
+      confirmLabel: 'Delete Forever',
       variant: 'danger',
       onConfirm: async () => {
         setConfirmModal((prev) => ({ ...prev, isLoading: true }))
@@ -292,370 +300,375 @@ function ProjectSettings() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="mx-auto w-full max-w-[1280px] flex-1 px-lg py-lg">
-        <h1 className="text-headline-xl font-bold text-on-surface">
-          Project Settings
-        </h1>
-        <p className="mt-xs text-body-lg text-on-surface-variant">
-          Manage your project configuration, team members, and lifecycle.
-        </p>
+      <div className="flex flex-1 flex-col min-w-0">
+        <TopBar />
 
-        <div className="mt-lg grid grid-cols-1 gap-lg lg:grid-cols-[220px_1fr]">
-          <div className="h-fit rounded-lg border border-outline-variant bg-surface-container-lowest p-sm">
-            {tabs.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => goToTab(t)}
-                className={`flex w-full items-center justify-between rounded-md px-md py-sm text-left text-body-md font-medium transition-colors ${
-                  tab === t
-                    ? 'bg-primary-fixed text-primary'
-                    : t === 'Danger Zone'
-                      ? 'text-rose-600 hover:bg-surface-container-low'
-                      : 'text-on-surface hover:bg-surface-container-low'
-                }`}
-              >
-                {t}
-                {tab === t && <ChevronRight size={16} />}
-              </button>
-            ))}
+        <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          {/* Header */}
+          <div className="mb-md">
+            <div className="flex items-center gap-xs">
+              <span className="rounded bg-primary-fixed px-xs py-0.5 font-mono text-code-xs font-bold text-on-primary-fixed uppercase tracking-wider">
+                [{currentProject.key}]
+              </span>
+              <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">
+                Project Configuration
+              </h1>
+            </div>
+            <p className="mt-xs text-body-md text-on-surface-variant">
+              Manage project metadata, access codes, permissions, and lifecycle states.
+            </p>
           </div>
 
-          <div className="flex flex-col gap-lg">
-            {!isOwner && (
-              <p className="rounded-md bg-surface-container-low px-md py-sm text-body-md text-on-surface-variant">
-                Only the project owner can change these settings. You can
-                still view them below.
-              </p>
-            )}
+          <div className="grid grid-cols-1 gap-md lg:grid-cols-[220px_1fr]">
+            {/* Navigation Tabs */}
+            <div className="h-fit rounded-lg border border-outline-variant bg-surface-container-lowest p-xs space-y-xs">
+              {tabs.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => goToTab(t)}
+                  className={`flex w-full items-center justify-between rounded px-sm py-xs text-left text-body-md font-semibold transition-colors ${
+                    tab === t
+                      ? 'bg-primary-fixed/40 text-primary'
+                      : t === 'Danger Zone'
+                        ? 'text-error hover:bg-rose-500/10'
+                        : 'text-on-surface hover:bg-surface-container'
+                  }`}
+                >
+                  <span>{t}</span>
+                  {tab === t && <ChevronRight size={14} />}
+                </button>
+              ))}
+            </div>
 
-            <form
-              ref={generalRef}
-              onSubmit={handleSave}
-              className="scroll-mt-lg rounded-lg border border-outline-variant bg-surface-container-lowest"
-            >
-              <div className="flex items-center justify-between px-lg py-md">
-                <h2 className="text-headline-md font-semibold text-on-surface">
-                  General Information
-                </h2>
-                {isOwner && !isEditingGeneral && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingGeneral(true)}
-                    className="flex items-center gap-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-                  >
-                    <Pencil size={16} />
-                    Edit
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-col gap-md border-t border-outline-variant px-lg py-lg">
-                {saveError && (
-                  <p className="rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
-                    {saveError}
-                  </p>
-                )}
-                {saveSuccess && (
-                  <p className="rounded-md bg-emerald-50 px-md py-sm text-body-md text-emerald-800">
-                    Saved.
-                  </p>
-                )}
-                <div>
-                  <label
-                    htmlFor="projectName"
-                    className="mb-sm block text-body-md font-semibold text-on-surface"
-                  >
-                    Project Name
-                  </label>
-                  <input
-                    id="projectName"
-                    type="text"
-                    disabled={!isOwner || !isEditingGeneral}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-lg text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
-                  />
+            {/* Content Pane */}
+            <div className="flex flex-col gap-md">
+              {!isOwner && (
+                <div className="rounded-lg border border-outline-variant bg-surface-container-low p-sm text-body-md text-on-surface-variant">
+                  You are viewing project settings in read-only mode. Only the project owner can update project parameters.
+                </div>
+              )}
+
+              {/* General Information Section */}
+              <form
+                ref={generalRef}
+                onSubmit={handleSave}
+                className="scroll-mt-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md"
+              >
+                <div className="flex items-center justify-between border-b border-outline-variant pb-xs mb-sm">
+                  <div>
+                    <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                      General Specifications
+                    </h2>
+                    <p className="font-mono text-code-xs text-on-surface-variant">
+                      Identity tokens and project-wide ticket prefixes.
+                    </p>
+                  </div>
+                  {isOwner && !isEditingGeneral && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingGeneral(true)}
+                      className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                    >
+                      <Pencil size={13} />
+                      <span>Edit</span>
+                    </button>
+                  )}
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="projectKey"
-                    className="mb-sm block text-body-md font-semibold text-on-surface"
-                  >
-                    Project Key (Prefix)
-                  </label>
-                  <input
-                    id="projectKey"
-                    type="text"
-                    disabled
-                    value={currentProject.key}
-                    className="w-[160px] rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-lg text-on-surface-variant outline-none"
-                  />
-                  <p className="mt-xs text-body-md text-on-surface-variant">
-                    This key is used as a prefix for all issues (e.g.,
-                    {' '}{currentProject.key}-123). It cannot be changed after
-                    creation.
-                  </p>
-                </div>
+                <div className="space-y-sm">
+                  {saveError && (
+                    <p className="rounded border border-rose-500/30 bg-rose-500/10 p-xs text-body-md text-rose-800 dark:text-rose-300">
+                      {saveError}
+                    </p>
+                  )}
+                  {saveSuccess && (
+                    <p className="rounded border border-emerald-500/30 bg-emerald-500/10 p-xs text-body-md text-emerald-800 dark:text-emerald-300">
+                      Project settings saved successfully.
+                    </p>
+                  )}
 
-                {isOwner && (
+                  <div className="grid grid-cols-1 gap-sm sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="projectName"
+                        className="mb-xs block text-label-md font-bold text-on-surface"
+                      >
+                        Project Name <span className="text-error">*</span>
+                      </label>
+                      <input
+                        id="projectName"
+                        type="text"
+                        disabled={!isOwner || !isEditingGeneral}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest disabled:opacity-60"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="projectKey"
+                        className="mb-xs block text-label-md font-bold text-on-surface"
+                      >
+                        Issue Prefix Key (Immutable)
+                      </label>
+                      <input
+                        id="projectKey"
+                        type="text"
+                        disabled
+                        value={currentProject.key}
+                        className="w-full rounded border border-outline-variant bg-surface-container-low px-sm py-xs font-mono text-code-sm font-bold text-on-surface-variant outline-none"
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label
-                      htmlFor="accessCode"
-                      className="mb-sm block text-body-md font-semibold text-on-surface"
+                      htmlFor="description"
+                      className="mb-xs block text-label-md font-bold text-on-surface"
                     >
-                      Project Access Code
+                      Project Description
                     </label>
-                    <div className="flex flex-wrap items-center gap-sm">
-                      <div className="flex items-center rounded-md border border-outline-variant bg-surface-container-low pl-md pr-xs py-[6px]">
-                        <span className="font-mono text-body-lg font-bold tracking-wider text-primary mr-sm">
-                          {currentProject.access_code ?? 'None'}
-                        </span>
-                        <div className="relative group">
+                    <textarea
+                      id="description"
+                      rows={3}
+                      disabled={!isOwner || !isEditingGeneral}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Brief overview of this project scope..."
+                      className="w-full rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest disabled:opacity-60"
+                    />
+                  </div>
+
+                  {/* Access Code Workbench Box */}
+                  {isOwner && (
+                    <div className="pt-xs border-t border-outline-variant">
+                      <label className="mb-xs block text-label-md font-bold text-on-surface">
+                        Self-Enrollment Access Code
+                      </label>
+                      <div className="flex flex-wrap items-center gap-xs">
+                        <div className="flex items-center rounded border border-outline-variant bg-surface-container-low pl-sm pr-xs py-1">
+                          <span className="font-mono text-code-sm font-bold tracking-wider text-primary mr-sm">
+                            {currentProject.access_code ?? 'NONE'}
+                          </span>
                           <button
                             type="button"
                             onClick={handleCopyCode}
                             aria-label={copiedCode ? 'Copied' : 'Copy access code'}
-                            className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-container transition-colors text-on-surface-variant hover:text-on-surface"
+                            className="flex h-6 w-6 items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container transition-colors"
                           >
-                            {copiedCode ? (
-                              <Check size={16} className="text-emerald-600" />
-                            ) : (
-                              <Copy size={16} />
-                            )}
+                            {copiedCode ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
                           </button>
-                          <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-inverse-surface px-xs py-[2px] text-label-md text-inverse-on-surface opacity-0 shadow-xs transition-opacity group-hover:opacity-100 z-10">
-                            {copiedCode ? 'Copied!' : 'Copy code'}
-                          </div>
                         </div>
+
+                        <button
+                          type="button"
+                          disabled={regeneratingCode}
+                          onClick={handleRegenerateCode}
+                          className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-mono text-code-xs font-semibold text-on-surface hover:bg-surface-container transition-colors disabled:opacity-50"
+                        >
+                          <RotateCw size={12} className={regeneratingCode ? 'animate-spin' : ''} />
+                          <span>{regeneratingCode ? 'REGENERATING…' : 'ROTATE CODE'}</span>
+                        </button>
                       </div>
 
+                      {accessCodeSuccess && (
+                        <p className="mt-xs text-body-md text-emerald-600">{accessCodeSuccess}</p>
+                      )}
+                      {accessCodeError && (
+                        <p className="mt-xs text-body-md text-error">{accessCodeError}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {isOwner && isEditingGeneral && (
+                    <div className="flex justify-end gap-xs pt-xs border-t border-outline-variant">
                       <button
                         type="button"
-                        disabled={regeneratingCode}
-                        onClick={handleRegenerateCode}
-                        className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-md font-semibold text-on-surface-variant hover:bg-surface-container-low disabled:opacity-60 transition-colors"
+                        onClick={() => {
+                          setName(currentProject.name)
+                          setDescription(currentProject.description ?? '')
+                          setSaveError(null)
+                          setSaveSuccess(false)
+                          setIsEditingGeneral(false)
+                        }}
+                        className="rounded border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
                       >
-                        <RotateCw
-                          size={14}
-                          className={regeneratingCode ? 'animate-spin' : ''}
-                        />
-                        {regeneratingCode ? 'Regenerating…' : 'Regenerate Code'}
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="rounded bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
+                      >
+                        {saving ? 'Saving…' : 'Save Changes'}
                       </button>
                     </div>
-                    {accessCodeSuccess && (
-                      <p className="mt-xs text-body-md text-emerald-700">
-                        {accessCodeSuccess}
-                      </p>
-                    )}
-                    {accessCodeError && (
-                      <p className="mt-xs text-body-md text-error">
-                        {accessCodeError}
-                      </p>
-                    )}
-                    <p className="mt-xs text-body-md text-on-surface-variant">
-                      Teammates can use this code to join this project directly on the Join Workspace page without an email invitation.
+                  )}
+                </div>
+              </form>
+
+              {/* Member Roles & Access */}
+              <div
+                ref={memberRolesRef}
+                className="scroll-mt-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md"
+              >
+                <div className="flex items-center justify-between border-b border-outline-variant pb-xs mb-sm">
+                  <div>
+                    <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                      Personnel Access Matrix
+                    </h2>
+                    <p className="font-mono text-code-xs text-on-surface-variant">
+                      Project roles, triage access, and QA execution rights.
                     </p>
                   </div>
-                )}
-
-                <div>
-                  <label
-                    htmlFor="description"
-                    className="mb-sm block text-body-md font-semibold text-on-surface"
-                  >
-                    Description
-                  </label>
-                  <textarea
-                    id="description"
-                    rows={3}
-                    disabled={!isOwner || !isEditingGeneral}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-lg text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
-                  />
-                </div>
-              </div>
-              {isOwner && isEditingGeneral && (
-                <div className="flex justify-end gap-md rounded-b-lg border-t border-outline-variant bg-surface-container-low px-lg py-md">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setName(currentProject.name)
-                      setDescription(currentProject.description ?? '')
-                      setSaveError(null)
-                      setSaveSuccess(false)
-                      setIsEditingGeneral(false)
-                    }}
-                    className="rounded-md px-md py-sm text-body-md font-semibold text-on-surface-variant hover:bg-surface-container"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary shadow-raised hover:bg-primary-container disabled:opacity-60"
-                  >
-                    {saving ? 'Saving…' : 'Save Changes'}
-                  </button>
-                </div>
-              )}
-            </form>
-
-            <div ref={memberRolesRef} className="scroll-mt-lg rounded-lg border border-outline-variant bg-surface-container-lowest">
-              <div className="flex items-center justify-between px-lg py-md">
-                <h2 className="text-headline-md font-semibold text-on-surface">
-                  Member Roles &amp; Access
-                </h2>
-                {isOwner && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/members')}
-                    className="flex items-center gap-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-                  >
-                    <UserPlus size={16} />
-                    Invite Member
-                  </button>
-                )}
-              </div>
-
-              <table className="w-full">
-                <thead>
-                  <tr className="border-t border-outline-variant bg-surface-container-low text-left text-label-md uppercase tracking-wide text-on-surface-variant">
-                    <th className="px-lg py-sm font-semibold">User</th>
-                    <th className="px-lg py-sm font-semibold">Role</th>
-                    <th className="px-lg py-sm text-right font-semibold">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((member) => (
-                    <tr
-                      key={member.user_id}
-                      className="border-t border-outline-variant hover:bg-surface-container-low"
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/members')}
+                      className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
                     >
-                      <td className="px-lg py-md">
-                        <div className="flex items-center gap-sm">
-                          <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={36} />
-                          <div>
-                            <p className="text-body-lg font-semibold text-on-surface">
+                      <UserPlus size={13} />
+                      <span>Manage Members</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="divide-y divide-outline-variant">
+                  {members.map((member) => {
+                    const roleInfo = roleBadgeConfig[member.role]
+                    return (
+                      <div
+                        key={member.user_id}
+                        className="flex items-center justify-between gap-sm py-xs hover:bg-surface-container-low/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-xs min-w-0">
+                          <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={28} />
+                          <div className="min-w-0">
+                            <p className="truncate text-body-md font-semibold text-on-surface">
                               {member.full_name ?? 'Unnamed'}
                             </p>
-                            <p className="text-body-md text-on-surface-variant">
+                            <p className="truncate font-mono text-code-xs text-outline">
                               {member.email}
                             </p>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-lg py-md">
-                        <div className="relative inline-flex">
-                          <select
-                            disabled={!isOwner}
-                            value={member.role}
-                            onChange={(e) =>
-                              handleRoleChange(member.user_id, e.target.value as ProjectRole)
-                            }
-                            className="appearance-none rounded-md px-sm py-xs pr-lg text-body-md text-on-surface outline-none hover:bg-surface-container disabled:opacity-60"
-                          >
-                            <option value="OWNER">Project Lead</option>
-                            <option value="DEVELOPER">Developer</option>
-                            <option value="QA">QA</option>
-                          </select>
-                          <ChevronDown
-                            className="pointer-events-none absolute right-xs top-1/2 -translate-y-1/2 text-on-surface-variant"
-                            size={16}
-                          />
+
+                        <div className="flex items-center gap-xs">
+                          {isOwner && member.user_id !== user?.id ? (
+                            <div className="relative inline-block">
+                              <select
+                                value={member.role}
+                                onChange={(e) =>
+                                  handleRoleChange(member.user_id, e.target.value as ProjectRole)
+                                }
+                                className={`appearance-none rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase outline-none pr-5 ${roleInfo.className}`}
+                              >
+                                <option value="DEVELOPER">DEV</option>
+                                <option value="QA">QA LAB</option>
+                                <option value="OWNER">OWNER</option>
+                              </select>
+                              <ChevronDown
+                                size={11}
+                                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-70"
+                              />
+                            </div>
+                          ) : (
+                            <span
+                              className={`inline-block rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}
+                            >
+                              {roleInfo.label}
+                            </span>
+                          )}
+
+                          {isOwner && member.user_id !== user?.id && (
+                            <button
+                              type="button"
+                              aria-label={`Remove ${member.full_name ?? member.email}`}
+                              onClick={() =>
+                                handleRemoveMember(
+                                  member.user_id,
+                                  member.full_name ?? member.email,
+                                )
+                              }
+                              className="inline-flex h-7 w-7 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
+                            >
+                              <UserMinus size={15} />
+                            </button>
+                          )}
                         </div>
-                      </td>
-                      <td className="px-lg py-md text-right">
-                        {isOwner && member.user_id !== user?.id && (
-                          <button
-                            type="button"
-                            aria-label={`Remove ${member.full_name ?? member.email}`}
-                            onClick={() =>
-                              handleRemoveMember(
-                                member.user_id,
-                                member.full_name ?? member.email,
-                              )
-                            }
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container hover:text-rose-600"
-                          >
-                            <UserMinus size={18} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div ref={dangerZoneRef} className="scroll-mt-lg rounded-lg border border-rose-200 bg-surface-container-lowest">
-              <div className="flex items-center gap-sm border-b border-rose-200 px-lg py-md">
-                <AlertTriangle className="text-rose-600" size={20} />
-                <h2 className="text-headline-md font-semibold text-rose-600">
-                  Danger Zone
-                </h2>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
-              {dangerError && (
-                <p className="mx-lg mt-lg rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
-                  {dangerError}
-                </p>
-              )}
+              {/* Danger Zone */}
+              <div
+                ref={dangerZoneRef}
+                className="scroll-mt-md rounded-lg border border-rose-500/30 bg-surface-container-lowest p-md"
+              >
+                <div className="flex items-center gap-xs border-b border-rose-500/20 pb-xs mb-sm">
+                  <AlertTriangle className="text-rose-600" size={16} />
+                  <h2 className="font-mono text-code-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                    Danger Zone · Destructive Operations
+                  </h2>
+                </div>
 
-              <div className="flex items-center justify-between gap-md px-lg py-lg">
-                <div>
-                  <p className="text-body-lg font-semibold text-on-surface">
-                    Archive Project
+                {dangerError && (
+                  <p className="mb-sm rounded border border-rose-500/30 bg-rose-500/10 p-xs text-body-md text-rose-800 dark:text-rose-300">
+                    {dangerError}
                   </p>
-                  <p className="mt-xs text-body-md text-on-surface-variant">
-                    Archiving a project makes it read-only. It will be hidden
-                    from the active project list, but you can view and restore
-                    it anytime in the{' '}
-                    <Link
-                      to="/projects/archived"
-                      className="font-semibold text-primary hover:underline"
+                )}
+
+                <div className="space-y-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-xs">
+                    <div>
+                      <p className="text-body-md font-bold text-on-surface">
+                        Archive Project
+                      </p>
+                      <p className="text-body-md text-on-surface-variant">
+                        Sets this project to read-only status and removes it from active backlogs. Viewable anytime in{' '}
+                        <Link to="/projects/archived" className="font-semibold text-primary hover:underline">
+                          Archived Projects
+                        </Link>
+                        .
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!isOwner || archiving}
+                      onClick={handleArchive}
+                      className="inline-flex shrink-0 items-center justify-center rounded border border-outline-variant bg-surface-container-lowest px-md py-xs font-mono text-code-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-surface-container transition-colors disabled:opacity-50"
                     >
-                      Archived Projects Hub
-                    </Link>
-                    .
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={!isOwner || archiving}
-                  onClick={handleArchive}
-                  className="shrink-0 text-body-md font-semibold text-rose-600 hover:underline disabled:opacity-50"
-                >
-                  {archiving ? 'Archiving…' : 'Archive Project'}
-                </button>
-              </div>
+                      {archiving ? 'ARCHIVING…' : 'ARCHIVE PROJECT'}
+                    </button>
+                  </div>
 
-              <div className="flex items-center justify-between gap-md border-t border-rose-100 px-lg py-lg">
-                <div>
-                  <p className="text-body-lg font-semibold text-on-surface">
-                    Delete Project
-                  </p>
-                  <p className="mt-xs text-body-md text-on-surface-variant">
-                    Once you delete a project, there is no going back.
-                    Please be certain. All issues, attachments, and history
-                    will be permanently destroyed.
-                  </p>
+                  <div className="pt-sm border-t border-rose-500/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-xs">
+                    <div>
+                      <p className="text-body-md font-bold text-error">
+                        Delete Project Permanently
+                      </p>
+                      <p className="text-body-md text-on-surface-variant">
+                        Destroys all tickets, reproduction steps, verification evidence, and activity ledger permanently.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!isOwner || deleting}
+                      onClick={handleDelete}
+                      className="inline-flex shrink-0 items-center justify-center rounded border border-rose-500/40 bg-rose-500/10 px-md py-xs font-mono text-code-xs font-bold text-error hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+                    >
+                      {deleting ? 'DELETING…' : 'DELETE FOREVER'}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  disabled={!isOwner || deleting}
-                  onClick={handleDelete}
-                  className="shrink-0 text-body-md font-bold text-on-surface hover:underline disabled:opacity-50"
-                >
-                  {deleting ? 'Deleting…' : 'Delete Project'}
-                </button>
               </div>
             </div>
           </div>
-        </div>
+        </main>
       </div>
 
       <ConfirmModal

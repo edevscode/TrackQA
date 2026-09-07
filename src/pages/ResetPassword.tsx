@@ -1,7 +1,9 @@
-import { Bug, Eye, EyeOff } from 'lucide-react'
+import { Check, Eye, EyeOff, Lock } from 'lucide-react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import AuthShowcasePanel from '../components/AuthShowcasePanel'
+import TrackQALogo from '../components/TrackQALogo'
 import { useAuth } from '../contexts/AuthContext'
 
 function ResetPassword() {
@@ -46,135 +48,212 @@ function ResetPassword() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface text-body-lg text-on-surface-variant">
-        Loading…
+      <div className="flex min-h-screen items-center justify-center bg-surface-container-lowest text-sm text-on-surface-variant">
+        Validating session token…
       </div>
     )
   }
 
   if (done) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-surface px-md py-xl text-center">
-        <h1 className="text-headline-xl font-bold text-on-surface">
-          Password updated
-        </h1>
-        <p className="mt-sm max-w-[440px] text-body-lg text-on-surface-variant">
-          Your password has been changed. Sign in again with your new
-          password.
-        </p>
-        <button
-          type="button"
-          onClick={handleContinue}
-          className="mt-lg rounded-md bg-primary px-lg py-sm text-body-lg font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-        >
-          Back to login
-        </button>
+      <div className="flex min-h-screen bg-surface-container-lowest">
+        {/* Left Column */}
+        <div className="flex flex-1 flex-col justify-between px-6 py-8 sm:px-12 md:px-16 lg:w-1/2 lg:flex-initial lg:py-12">
+          <div className="lg:hidden">
+            <Link
+              to="/"
+              className="inline-flex items-center hover:opacity-90 transition-opacity"
+            >
+              <TrackQALogo size="md" />
+            </Link>
+          </div>
+
+          <div className="my-auto mx-auto w-full max-w-[420px] py-8 text-center sm:text-left">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <Check size={24} />
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">
+              Password updated
+            </h1>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              Your credentials have been successfully updated. You can now sign in with your new password.
+            </p>
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={handleContinue}
+                className="inline-flex rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-on-primary hover:bg-primary-container transition-colors shadow-xs"
+              >
+                Proceed to Sign in
+              </button>
+            </div>
+          </div>
+
+          <div className="text-xs text-outline">
+            © {new Date().getFullYear()} TrackQA. All rights reserved.
+          </div>
+        </div>
+
+        {/* Right Column: Visual Showcase Panel */}
+        <AuthShowcasePanel />
       </div>
     )
   }
 
   if (!session) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-surface px-md py-xl text-center">
-        <h1 className="text-headline-xl font-bold text-on-surface">
-          This link has expired
-        </h1>
-        <p className="mt-sm max-w-[440px] text-body-lg text-on-surface-variant">
-          Password reset links are only valid for a short time. Request a new
-          one to continue.
-        </p>
-        <Link
-          to="/forgot-password"
-          className="mt-lg rounded-md bg-primary px-lg py-sm text-body-lg font-semibold text-on-primary shadow-raised hover:bg-primary-container"
-        >
-          Request a new link
-        </Link>
+      <div className="flex min-h-screen bg-surface-container-lowest">
+        {/* Left Column */}
+        <div className="flex flex-1 flex-col justify-between px-6 py-8 sm:px-12 md:px-16 lg:w-1/2 lg:flex-initial lg:py-12">
+          <div className="lg:hidden">
+            <Link
+              to="/"
+              className="inline-flex items-center hover:opacity-90 transition-opacity"
+            >
+              <TrackQALogo size="md" />
+            </Link>
+          </div>
+
+          <div className="my-auto mx-auto w-full max-w-[420px] py-8 text-center sm:text-left">
+            <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">
+              Session expired
+            </h1>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              This password recovery link has expired or is invalid. Request a new link to continue.
+            </p>
+            <div className="mt-6">
+              <Link
+                to="/forgot-password"
+                className="inline-flex rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-on-primary hover:bg-primary-container transition-colors shadow-xs"
+              >
+                Request new link
+              </Link>
+            </div>
+          </div>
+
+          <div className="text-xs text-outline">
+            © {new Date().getFullYear()} TrackQA. All rights reserved.
+          </div>
+        </div>
+
+        {/* Right Column: Visual Showcase Panel */}
+        <AuthShowcasePanel />
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-surface px-md py-xl">
-      <div className="flex flex-col items-center">
-        <div className="mb-md flex h-16 w-16 items-center justify-center rounded-xl bg-primary">
-          <Bug className="text-on-primary" size={32} />
+    <div className="flex min-h-screen bg-surface-container-lowest">
+      {/* Left Column: Form Canvas */}
+      <div className="flex flex-1 flex-col justify-between px-6 py-8 sm:px-12 md:px-16 lg:w-1/2 lg:flex-initial lg:py-12">
+        {/* TrackQA Official Logo (Mobile only) */}
+        <div className="lg:hidden">
+          <Link
+            to="/"
+            className="inline-flex items-center hover:opacity-90 transition-opacity"
+          >
+            <TrackQALogo size="md" />
+          </Link>
         </div>
-        <h1 className="text-headline-xl font-bold text-primary">TrackQA</h1>
-      </div>
 
-      <div className="mt-xl w-full max-w-[440px] rounded-lg border border-outline-variant bg-surface-container-lowest p-xl shadow-raised">
-        <div className="mb-lg text-center">
-          <h2 className="text-headline-lg font-bold text-on-surface">
-            Choose a new password
-          </h2>
-          <p className="mt-xs text-body-md text-on-surface-variant">
-            Enter and confirm your new password below.
+        {/* Centered Form Body */}
+        <div className="my-auto mx-auto w-full max-w-[420px] py-8">
+          <div className="mb-8">
+            <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">
+              Set new password
+            </h1>
+            <p className="mt-1.5 text-sm text-on-surface-variant">
+              Please choose a new password for your account.
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {error && (
+              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-800 dark:text-rose-300">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-sm font-semibold text-on-surface"
+              >
+                New password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  autoFocus
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3.5 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="confirmPassword"
+                className="mb-1.5 block text-sm font-semibold text-on-surface"
+              >
+                Confirm password
+              </label>
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3.5 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all"
+                />
+                <Lock
+                  className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-outline"
+                  size={16}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="mt-2 w-full rounded-lg bg-primary py-3 text-sm font-bold text-on-primary hover:bg-primary-container active:scale-[0.99] transition-all disabled:opacity-50 shadow-xs"
+            >
+              {submitting ? 'Updating…' : 'Update password'}
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-sm text-on-surface-variant">
+            Remember your credentials?{' '}
+            <Link to="/login" className="font-bold text-primary hover:underline">
+              Sign in
+            </Link>
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-md">
-          {error && (
-            <p className="rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
-              {error}
-            </p>
-          )}
-
-          <div>
-            <label
-              htmlFor="password"
-              className="mb-xs block text-body-md font-semibold text-on-surface"
-            >
-              New password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
-                required
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-lg text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-md top-1/2 -translate-y-1/2 text-outline hover:text-on-surface-variant"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="confirmPassword"
-              className="mb-xs block text-body-md font-semibold text-on-surface"
-            >
-              Confirm password
-            </label>
-            <input
-              id="confirmPassword"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-lg text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-sm w-full rounded-md bg-primary py-sm text-body-lg font-semibold text-on-primary shadow-raised transition-colors hover:bg-primary-container disabled:opacity-60"
-          >
-            {submitting ? 'Updating…' : 'Update password'}
-          </button>
-        </form>
+        {/* Bottom Footer */}
+        <div className="text-xs text-outline">
+          © {new Date().getFullYear()} TrackQA. All rights reserved.
+        </div>
       </div>
+
+      {/* Right Column: Visual Showcase Panel */}
+      <AuthShowcasePanel />
     </div>
   )
 }
