@@ -98,7 +98,7 @@ function timeAgo(iso: string) {
 }
 
 function Dashboard() {
-  const { user, profile } = useAuth()
+  const { profile } = useAuth()
   const { currentProject } = useProject()
 
   const [stats, setStats] = useState<ProjectDashboardStats | null>(null)
@@ -145,7 +145,8 @@ function Dashboard() {
 
   useRealtimeSync({
     projectId: currentProject?.id,
-    onMutation: () => loadData(true),
+    userId: profile?.id,
+    onRefresh: () => loadData(true),
   })
 
   const today = new Intl.DateTimeFormat('en-US', {
