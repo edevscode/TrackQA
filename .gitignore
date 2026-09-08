@@ -18,9 +18,7 @@ dist-ssr
 .env.*
 !.env.example
 
-# Database migrations & SQL files
-supabase/migrations/
-*.sql
+# Supabase local CLI temp files (not the migrations themselves)
 supabase/.temp/
 
 # Editor directories and files
