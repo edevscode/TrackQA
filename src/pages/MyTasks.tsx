@@ -29,12 +29,12 @@ type TaskRow = MyTasksItem
 
 const statusOptions: { value: IssueStatus | ''; label: string; dot: string }[] = [
   { value: '', label: 'All Statuses', dot: 'bg-outline' },
-  { value: 'OPEN', label: 'Open', dot: 'bg-rose-500' },
-  { value: 'IN_PROGRESS', label: 'In Progress', dot: 'bg-blue-500' },
-  { value: 'FOR_TESTING', label: 'For Testing', dot: 'bg-purple-500' },
-  { value: 'PASSED', label: 'Passed', dot: 'bg-emerald-500' },
-  { value: 'FAILED', label: 'Failed', dot: 'bg-rose-500' },
-  { value: 'DONE', label: 'Done', dot: 'bg-outline' },
+  { value: 'OPEN', label: 'Open', dot: 'bg-outline' },
+  { value: 'IN_PROGRESS', label: 'In Progress', dot: 'bg-primary' },
+  { value: 'FOR_TESTING', label: 'For Testing', dot: 'bg-amber-500' },
+  { value: 'PASSED', label: 'QA Passed', dot: 'bg-emerald-500' },
+  { value: 'FAILED', label: 'QA Failed', dot: 'bg-rose-500' },
+  { value: 'DONE', label: 'Closed', dot: 'bg-slate-400' },
 ]
 
 const priorityOptions: {
@@ -65,41 +65,78 @@ const sortOptions: { value: SortOption; label: string }[] = [
   { value: 'priority_desc', label: 'Priority (Critical first)' },
 ]
 
-const statusDot: Record<IssueStatus, string> = {
-  OPEN: 'bg-rose-500',
-  IN_PROGRESS: 'bg-blue-500',
-  FOR_TESTING: 'bg-purple-500',
-  PASSED: 'bg-emerald-500',
-  FAILED: 'bg-rose-500',
-  DONE: 'bg-outline',
+const statusConfig: Record<
+  IssueStatus,
+  { label: string; dotClass: string; badgeClass: string }
+> = {
+  OPEN: {
+    label: 'Open',
+    dotClass: 'bg-outline',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+  },
+  IN_PROGRESS: {
+    label: 'In Dev',
+    dotClass: 'bg-primary',
+    badgeClass: 'border-primary/30 bg-primary-fixed/30 text-primary',
+  },
+  FOR_TESTING: {
+    label: 'For QA',
+    dotClass: 'bg-amber-500 animate-pulse',
+    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+  PASSED: {
+    label: 'QA Passed',
+    dotClass: 'bg-emerald-500',
+    badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  },
+  FAILED: {
+    label: 'QA Failed',
+    dotClass: 'bg-rose-500',
+    badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+  },
+  DONE: {
+    label: 'Closed',
+    dotClass: 'bg-slate-400',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+  },
 }
 
 const priorityConfig: Record<
   IssuePriority,
   {
+    label: string
     icon: typeof ChevronsUp
-    badge: string
+    badgeClass: string
+    iconClass: string
     weight: number
   }
 > = {
   CRITICAL: {
+    label: 'Critical',
     icon: ChevronsUp,
-    badge: 'bg-rose-50 text-rose-700',
+    badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+    iconClass: 'text-rose-600',
     weight: 4,
   },
   HIGH: {
+    label: 'High',
     icon: ChevronUp,
-    badge: 'bg-amber-50 text-amber-700',
+    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    iconClass: 'text-amber-600',
     weight: 3,
   },
   MEDIUM: {
+    label: 'Medium',
     icon: Equal,
-    badge: 'bg-surface-container text-on-surface-variant',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+    iconClass: 'text-outline',
     weight: 2,
   },
   LOW: {
+    label: 'Low',
     icon: ChevronDown,
-    badge: 'bg-surface-container text-on-surface-variant',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+    iconClass: 'text-outline',
     weight: 1,
   },
 }
@@ -252,30 +289,37 @@ function MyTasks() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-w-0">
         <TopBar />
 
-        <main className="mx-auto w-full max-w-[1280px] flex-1 px-lg py-lg">
+        <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
           {/* Header & Filter Controls */}
-          <div className="mb-md flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-headline-xl font-bold text-on-surface">My Tasks</h1>
+              <div className="flex items-center gap-xs">
+                <span className="rounded bg-primary-fixed px-xs py-0.5 font-mono text-code-xs font-bold text-on-primary-fixed uppercase tracking-wider">
+                  [{currentProject?.key ?? 'QA'}]
+                </span>
+                <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">
+                  Operator Queue
+                </h1>
+              </div>
               <p className="mt-xs text-body-md text-on-surface-variant">
-                Manage and track all tasks assigned to you or created by you.
+                Tickets requiring active development, verification runs, or authored triage.
               </p>
             </div>
 
             {/* Filter and Sort Dropdowns */}
-            <div className="flex flex-wrap items-center gap-sm">
+            <div className="flex flex-wrap items-center gap-xs sm:gap-sm">
               {/* Search Bar */}
-              <div className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-body-md">
-                <Search size={16} className="text-outline" />
+              <div className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-body-md focus-within:border-primary transition-colors">
+                <Search size={15} className="text-outline" />
                 <input
                   type="text"
-                  placeholder="Filter by title or #..."
+                  placeholder="Search queue…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-36 bg-transparent text-on-surface outline-none placeholder:text-outline sm:w-48"
+                  className="w-32 bg-transparent text-body-md text-on-surface outline-none placeholder:text-outline sm:w-44"
                 />
                 {searchQuery && (
                   <button
@@ -297,22 +341,22 @@ function MyTasks() {
                     setPriorityMenuOpen(false)
                     setSortMenuOpen(false)
                   }}
-                  className={`flex items-center gap-xs rounded-md border px-md py-sm text-body-md font-medium transition-colors ${
+                  className={`flex items-center gap-xs rounded-md border px-sm py-xs text-label-md font-semibold transition-colors ${
                     statusFilter
                       ? 'border-primary bg-primary-fixed/40 text-primary'
-                      : 'border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-low'
+                      : 'border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container'
                   }`}
                 >
-                  <ListFilter size={16} />
+                  <ListFilter size={15} />
                   <span>
                     {statusFilter ? `Status: ${selectedStatusLabel}` : 'Status'}
                   </span>
-                  <ChevronDown size={14} className="opacity-70" />
+                  <ChevronDown size={13} className="opacity-70" />
                 </button>
 
                 {statusMenuOpen && (
-                  <div className="absolute right-0 z-20 mt-xs w-48 rounded-lg border border-outline-variant bg-surface-container-lowest py-xs shadow-raised animate-in fade-in zoom-in-95 duration-100">
-                    <div className="px-md py-xs text-[11px] font-bold tracking-wider text-outline uppercase">
+                  <div className="absolute right-0 z-20 mt-xs w-48 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm">
+                    <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
                       Filter Status
                     </div>
                     {statusOptions.map((opt) => (
@@ -323,14 +367,14 @@ function MyTasks() {
                           setStatusFilter(opt.value)
                           setStatusMenuOpen(false)
                         }}
-                        className={`flex w-full items-center justify-between px-md py-sm text-body-md transition-colors ${
+                        className={`flex w-full items-center justify-between px-sm py-xs text-body-md transition-colors ${
                           statusFilter === opt.value
                             ? 'bg-primary-fixed/30 font-semibold text-primary'
-                            : 'text-on-surface hover:bg-surface-container-low'
+                            : 'text-on-surface hover:bg-surface-container'
                         }`}
                       >
-                        <span className="flex items-center gap-sm">
-                          <span className={`h-2 w-2 rounded-full ${opt.dot}`} />
+                        <span className="flex items-center gap-xs">
+                          <span className={`h-1.5 w-1.5 rounded-full ${opt.dot}`} />
                           {opt.label}
                         </span>
                         {statusFilter === opt.value && <Check size={14} />}
@@ -349,22 +393,22 @@ function MyTasks() {
                     setStatusMenuOpen(false)
                     setSortMenuOpen(false)
                   }}
-                  className={`flex items-center gap-xs rounded-md border px-md py-sm text-body-md font-medium transition-colors ${
+                  className={`flex items-center gap-xs rounded-md border px-sm py-xs text-label-md font-semibold transition-colors ${
                     priorityFilter
                       ? 'border-primary bg-primary-fixed/40 text-primary'
-                      : 'border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-low'
+                      : 'border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container'
                   }`}
                 >
-                  <ChevronsUp size={16} />
+                  <ChevronsUp size={15} />
                   <span>
                     {priorityFilter ? `Priority: ${selectedPriorityLabel}` : 'Priority'}
                   </span>
-                  <ChevronDown size={14} className="opacity-70" />
+                  <ChevronDown size={13} className="opacity-70" />
                 </button>
 
                 {priorityMenuOpen && (
-                  <div className="absolute right-0 z-20 mt-xs w-48 rounded-lg border border-outline-variant bg-surface-container-lowest py-xs shadow-raised animate-in fade-in zoom-in-95 duration-100">
-                    <div className="px-md py-xs text-[11px] font-bold tracking-wider text-outline uppercase">
+                  <div className="absolute right-0 z-20 mt-xs w-48 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm">
+                    <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
                       Filter Priority
                     </div>
                     {priorityOptions.map((opt) => {
@@ -377,13 +421,13 @@ function MyTasks() {
                             setPriorityFilter(opt.value)
                             setPriorityMenuOpen(false)
                           }}
-                          className={`flex w-full items-center justify-between px-md py-sm text-body-md transition-colors ${
+                          className={`flex w-full items-center justify-between px-sm py-xs text-body-md transition-colors ${
                             priorityFilter === opt.value
                               ? 'bg-primary-fixed/30 font-semibold text-primary'
-                              : 'text-on-surface hover:bg-surface-container-low'
+                              : 'text-on-surface hover:bg-surface-container'
                           }`}
                         >
-                          <span className="flex items-center gap-sm">
+                          <span className="flex items-center gap-xs">
                             <Icon size={14} className={opt.color} />
                             {opt.label}
                           </span>
@@ -404,17 +448,17 @@ function MyTasks() {
                     setStatusMenuOpen(false)
                     setPriorityMenuOpen(false)
                   }}
-                  className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-md font-medium text-on-surface hover:bg-surface-container-low"
+                  className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
                 >
-                  <ArrowUpDown size={16} />
+                  <ArrowUpDown size={15} />
                   <span>Sort: {selectedSortLabel}</span>
-                  <ChevronDown size={14} className="opacity-70" />
+                  <ChevronDown size={13} className="opacity-70" />
                 </button>
 
                 {sortMenuOpen && (
-                  <div className="absolute right-0 z-20 mt-xs w-56 rounded-lg border border-outline-variant bg-surface-container-lowest py-xs shadow-raised animate-in fade-in zoom-in-95 duration-100">
-                    <div className="px-md py-xs text-[11px] font-bold tracking-wider text-outline uppercase">
-                      Sort Tasks By
+                  <div className="absolute right-0 z-20 mt-xs w-56 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm">
+                    <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
+                      Sort Queue By
                     </div>
                     {sortOptions.map((opt) => (
                       <button
@@ -424,10 +468,10 @@ function MyTasks() {
                           setSortBy(opt.value)
                           setSortMenuOpen(false)
                         }}
-                        className={`flex w-full items-center justify-between px-md py-sm text-body-md transition-colors ${
+                        className={`flex w-full items-center justify-between px-sm py-xs text-body-md transition-colors ${
                           sortBy === opt.value
                             ? 'bg-primary-fixed/30 font-semibold text-primary'
-                            : 'text-on-surface hover:bg-surface-container-low'
+                            : 'text-on-surface hover:bg-surface-container'
                         }`}
                       >
                         <span>{opt.label}</span>
@@ -443,12 +487,12 @@ function MyTasks() {
           {/* Active Filter Chips Bar */}
           {hasActiveFilters && (
             <div className="mb-md flex flex-wrap items-center gap-xs">
-              <span className="text-label-md font-semibold text-outline">
+              <span className="font-mono text-code-xs font-semibold text-outline uppercase">
                 Active filters:
               </span>
               {searchQuery && (
-                <span className="flex items-center gap-xs rounded-full border border-outline-variant bg-surface-container-low px-sm py-[2px] text-label-md text-on-surface">
-                  Search: "{searchQuery}"
+                <span className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs text-on-surface">
+                  Query: {searchQuery}
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
@@ -459,7 +503,7 @@ function MyTasks() {
                 </span>
               )}
               {statusFilter && (
-                <span className="flex items-center gap-xs rounded-full border border-outline-variant bg-surface-container-low px-sm py-[2px] text-label-md text-on-surface">
+                <span className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs text-on-surface">
                   Status: {selectedStatusLabel}
                   <button
                     type="button"
@@ -471,7 +515,7 @@ function MyTasks() {
                 </span>
               )}
               {priorityFilter && (
-                <span className="flex items-center gap-xs rounded-full border border-outline-variant bg-surface-container-low px-sm py-[2px] text-label-md text-on-surface">
+                <span className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs text-on-surface">
                   Priority: {selectedPriorityLabel}
                   <button
                     type="button"
@@ -485,7 +529,7 @@ function MyTasks() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="text-label-md font-semibold text-primary hover:underline"
+                className="font-mono text-code-xs font-semibold text-primary hover:underline"
               >
                 Clear all
               </button>
@@ -493,12 +537,12 @@ function MyTasks() {
           )}
 
           {/* Tabs: Assigned vs Reported */}
-          <div className="mb-lg flex items-center justify-between border-b border-outline-variant">
-            <div className="flex items-center gap-lg">
+          <div className="mb-md flex items-center justify-between border-b border-outline-variant">
+            <div className="flex items-center gap-md">
               <button
                 type="button"
                 onClick={() => setTab('assigned')}
-                className={`-mb-px border-b-2 pb-sm text-body-lg font-semibold transition-colors ${
+                className={`-mb-px border-b-2 pb-xs text-body-md font-semibold transition-colors ${
                   tab === 'assigned'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-on-surface-variant hover:text-on-surface'
@@ -509,7 +553,7 @@ function MyTasks() {
               <button
                 type="button"
                 onClick={() => setTab('reported')}
-                className={`-mb-px border-b-2 pb-sm text-body-lg font-semibold transition-colors ${
+                className={`-mb-px border-b-2 pb-xs text-body-md font-semibold transition-colors ${
                   tab === 'reported'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-on-surface-variant hover:text-on-surface'
@@ -519,27 +563,27 @@ function MyTasks() {
               </button>
             </div>
 
-            <span className="pb-sm text-label-md text-on-surface-variant">
-              Showing {filteredTasks.length} task{filteredTasks.length === 1 ? '' : 's'}
+            <span className="pb-xs font-mono text-code-xs text-on-surface-variant">
+              {filteredTasks.length} QUEUED {filteredTasks.length === 1 ? 'ITEM' : 'ITEMS'}
             </span>
           </div>
 
           {/* Task Cards Grid */}
           {loading ? (
-            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest px-lg py-xl text-center text-body-lg text-on-surface-variant">
-              Loading tasks…
+            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center text-body-md text-on-surface-variant font-mono">
+              Loading queue items…
             </div>
           ) : filteredTasks.length === 0 ? (
-            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-xs text-center">
-              <p className="text-body-lg font-semibold text-on-surface">
-                {hasActiveFilters ? 'No matching tasks' : 'No tasks found'}
+            <div className="flex min-h-[360px] flex-col items-center justify-center gap-xs rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center">
+              <p className="text-headline-md font-semibold text-on-surface">
+                {hasActiveFilters ? 'No matching queue items' : 'Queue is clear'}
               </p>
-              <p className="text-body-md text-on-surface-variant">
+              <p className="text-body-md text-on-surface-variant max-w-md">
                 {hasActiveFilters
-                  ? 'No tasks matched your current search and filter criteria. Try resetting or adjusting your filters.'
+                  ? 'No tasks matched your current search and filter criteria.'
                   : tab === 'assigned'
-                    ? 'Nothing assigned to you right now in this project.'
-                    : "You haven't reported any issues yet in this project."}
+                    ? 'No tickets currently assigned to your operator account in this project.'
+                    : 'You have not authored any issues in this project yet.'}
               </p>
               {hasActiveFilters && (
                 <button
@@ -547,45 +591,51 @@ function MyTasks() {
                   onClick={clearFilters}
                   className="mt-xs text-label-md font-semibold text-primary hover:underline"
                 >
-                  Clear all filters
+                  Reset all filters
                 </button>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-lg sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-3">
               {filteredTasks.map((task) => {
                 const Priority = priorityConfig[task.priority]
+                const Status = statusConfig[task.status]
+                const PriorityIcon = Priority.icon
+                const ticketAnchor = `[${currentProject?.key ?? 'TASK'}-${task.issue_number}]`
+
                 return (
                   <Link
                     key={task.id}
                     to={`/issues/${task.id}`}
-                    className="group flex flex-col justify-between rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-xs transition-all hover:border-primary/40 hover:bg-surface-container-low hover:shadow-sm"
+                    className="group flex flex-col justify-between rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary/50 transition-colors"
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-sm">
-                        <span className="font-mono text-code-sm font-semibold text-on-surface-variant group-hover:text-primary transition-colors">
-                          {currentProject?.key}-{task.issue_number}
+                      <div className="flex items-center justify-between gap-xs">
+                        <span className="font-mono text-code-xs font-bold text-on-surface group-hover:text-primary transition-colors">
+                          {ticketAnchor}
                         </span>
                         <span
-                          className={`flex items-center gap-xs rounded-full px-sm py-[2px] text-label-md font-semibold ${Priority.badge}`}
+                          className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${Priority.badgeClass}`}
                         >
-                          <Priority.icon size={12} />
-                          {task.priority}
+                          <PriorityIcon size={12} className={Priority.iconClass} />
+                          {Priority.label}
                         </span>
                       </div>
 
-                      <h2 className="mt-sm line-clamp-2 text-headline-md font-semibold text-on-surface group-hover:text-primary transition-colors">
+                      <h2 className="mt-xs line-clamp-2 text-body-lg font-semibold text-on-surface group-hover:text-primary transition-colors">
                         {task.title}
                       </h2>
                     </div>
 
-                    <div className="mt-md flex items-center justify-between border-t border-outline-variant/60 pt-sm text-body-md text-on-surface-variant">
-                      <span className="flex items-center gap-xs text-on-surface">
-                        <span className={`h-2 w-2 rounded-full ${statusDot[task.status]}`} />
-                        {task.status.replace('_', ' ')}
+                    <div className="mt-md flex items-center justify-between border-t border-outline-variant pt-xs">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${Status.badgeClass}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${Status.dotClass}`} />
+                        {Status.label}
                       </span>
-                      <span className="flex items-center gap-xs text-[12px]">
-                        <Clock size={13} />
+                      <span className="flex items-center gap-xs font-mono text-code-xs text-outline">
+                        <Clock size={12} />
                         {timeAgo(task.updated_at)}
                       </span>
                     </div>

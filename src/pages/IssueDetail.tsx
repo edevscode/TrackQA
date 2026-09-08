@@ -1,4 +1,5 @@
 import {
+  AlertCircle,
   Bug,
   Check,
   ChevronDown,
@@ -6,13 +7,15 @@ import {
   ChevronsUp,
   ChevronUp,
   CircleCheck,
-  ClipboardCheck,
+  Clock,
   Code2,
   Equal,
   FileText,
   FlaskConical,
+  MessageSquare,
   Paperclip,
   Pencil,
+  RotateCcw,
   Trash2,
   UploadCloud,
   X,
@@ -23,7 +26,9 @@ import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
+import ImagePreviewModal, { type PreviewImage } from '../components/ImagePreviewModal'
 import Sidebar from '../components/Sidebar'
+import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { useRealtimeSync } from '../hooks/useRealtimeSync'
@@ -42,19 +47,78 @@ import type {
   QaVerificationAttachment,
 } from '../lib/database.types'
 
-const workflowSteps: IssueStatus[] = [
-  'OPEN',
-  'IN_PROGRESS',
-  'FOR_TESTING',
-  'PASSED',
-  'DONE',
+const workflowSteps: { status: IssueStatus; label: string; stepNumber: string }[] = [
+  { status: 'OPEN', label: 'Open', stepNumber: '01' },
+  { status: 'IN_PROGRESS', label: 'In Dev', stepNumber: '02' },
+  { status: 'FOR_TESTING', label: 'For QA', stepNumber: '03' },
+  { status: 'PASSED', label: 'Verified', stepNumber: '04' },
+  { status: 'DONE', label: 'Closed', stepNumber: '05' },
 ]
 
-const priorityConfig: Record<IssuePriority, { icon: typeof ChevronsUp; className: string }> = {
-  CRITICAL: { icon: ChevronsUp, className: 'text-rose-600' },
-  HIGH: { icon: ChevronUp, className: 'text-amber-600' },
-  MEDIUM: { icon: Equal, className: 'text-outline' },
-  LOW: { icon: ChevronDown, className: 'text-outline' },
+const priorityConfig: Record<
+  IssuePriority,
+  { label: string; icon: typeof ChevronsUp; badgeClass: string; iconClass: string }
+> = {
+  CRITICAL: {
+    label: 'Critical',
+    icon: ChevronsUp,
+    badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+    iconClass: 'text-rose-600',
+  },
+  HIGH: {
+    label: 'High',
+    icon: ChevronUp,
+    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    iconClass: 'text-amber-600',
+  },
+  MEDIUM: {
+    label: 'Medium',
+    icon: Equal,
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+    iconClass: 'text-outline',
+  },
+  LOW: {
+    label: 'Low',
+    icon: ChevronDown,
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+    iconClass: 'text-outline',
+  },
+}
+
+const statusConfig: Record<
+  IssueStatus,
+  { label: string; dotClass: string; badgeClass: string }
+> = {
+  OPEN: {
+    label: 'Open',
+    dotClass: 'bg-outline',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+  },
+  IN_PROGRESS: {
+    label: 'In Progress',
+    dotClass: 'bg-primary',
+    badgeClass: 'border-primary/30 bg-primary-fixed/30 text-primary',
+  },
+  FOR_TESTING: {
+    label: 'For Testing',
+    dotClass: 'bg-amber-500 animate-pulse',
+    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+  PASSED: {
+    label: 'QA Passed',
+    dotClass: 'bg-emerald-500',
+    badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  },
+  FAILED: {
+    label: 'QA Failed',
+    dotClass: 'bg-rose-500',
+    badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+  },
+  DONE: {
+    label: 'Closed',
+    dotClass: 'bg-slate-400',
+    badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
+  },
 }
 
 const activityText: Partial<Record<ActivityAction, (a: TimelineActivity) => string>> = {
@@ -63,10 +127,10 @@ const activityText: Partial<Record<ActivityAction, (a: TimelineActivity) => stri
   REASSIGNED: () => 'reassigned this issue',
   PRIORITY_CHANGED: (a) => `changed priority from ${a.from_value} to ${a.to_value}`,
   STATUS_CHANGED: (a) => `changed status to ${a.to_value}`,
-  SUBMITTED_FOR_TESTING: () => 'submitted this issue for testing',
-  QA_PASSED: () => 'marked QA as passed',
-  QA_FAILED: () => 'marked QA as failed',
-  MARKED_DONE: () => 'marked this issue as done',
+  SUBMITTED_FOR_TESTING: () => 'submitted this issue for QA verification',
+  QA_PASSED: () => 'marked QA as PASSED',
+  QA_FAILED: () => 'marked QA as FAILED',
+  MARKED_DONE: () => 'closed this issue as DONE',
 }
 
 type Member = {
@@ -96,8 +160,12 @@ type AttachmentRow = IssueAttachment & {
   uploader: { full_name: string | null } | null
 }
 
-function isImageAttachment(mimeType: string | null) {
-  return !!mimeType && mimeType.startsWith('image/')
+function isImageAttachment(mimeType: string | null, fileName?: string | null) {
+  if (mimeType && mimeType.startsWith('image/')) return true
+  if (fileName) {
+    return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(fileName)
+  }
+  return false
 }
 
 function formatBytes(bytes: number | null) {
@@ -129,6 +197,7 @@ function IssueDetail() {
   const [attachments, setAttachments] = useState<AttachmentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null)
 
   const [comment, setComment] = useState('')
   const [postingComment, setPostingComment] = useState(false)
@@ -357,8 +426,7 @@ function IssueDetail() {
           file_size_bytes: uploadResult.bytes,
         })
       } catch {
-        // The verification itself is already recorded; a failed evidence
-        // upload just means that one file is missing from the record.
+        // Verification was already recorded
       }
     }
 
@@ -384,7 +452,6 @@ function IssueDetail() {
       load()
     }
   }
-
 
   const openEditModal = () => {
     if (!issue) return
@@ -487,7 +554,7 @@ function IssueDetail() {
     setConfirmModal({
       open: true,
       title: 'Delete Task',
-      description: `Are you sure you want to delete ${issueCode}: "${issue.title}"? All comments, attachments, and QA activity will be permanently destroyed. This action cannot be undone.`,
+      description: `Are you sure you want to delete [${issueCode}]: "${issue.title}"? All comments, attachments, and QA verification logs will be permanently deleted.`,
       confirmLabel: 'Delete Task',
       variant: 'danger',
       onConfirm: async () => {
@@ -509,8 +576,14 @@ function IssueDetail() {
     return (
       <div className="flex min-h-screen bg-surface">
         <Sidebar />
-        <div className="flex-1 px-lg py-lg text-body-lg text-on-surface-variant">
-          Loading…
+        <div className="flex flex-1 flex-col min-w-0">
+          <TopBar />
+          <main className="flex-1 p-lg flex items-center justify-center">
+            <div className="flex items-center gap-sm text-body-md text-on-surface-variant font-mono">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              Loading ticket record…
+            </div>
+          </main>
         </div>
       </div>
     )
@@ -520,23 +593,30 @@ function IssueDetail() {
     return (
       <div className="flex min-h-screen bg-surface">
         <Sidebar />
-        <div className="flex-1 px-lg py-lg">
-          <p className="text-body-lg text-on-surface-variant">
-            This issue doesn't exist or you don't have access to it.{' '}
-            <Link to="/issues" className="font-semibold text-primary hover:underline">
-              Back to Issues
-            </Link>
-          </p>
+        <div className="flex flex-1 flex-col min-w-0">
+          <TopBar />
+          <main className="flex-1 p-lg">
+            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center">
+              <AlertCircle size={32} className="mx-auto mb-sm text-error" />
+              <h2 className="text-headline-md font-bold text-on-surface">Issue Not Found</h2>
+              <p className="mt-xs text-body-md text-on-surface-variant">
+                This issue does not exist in this project or you do not have permission to view it.
+              </p>
+              <div className="mt-md">
+                <Link
+                  to="/issues"
+                  className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
+                >
+                  Return to Backlog
+                </Link>
+              </div>
+            </div>
+          </main>
         </div>
       </div>
     )
   }
 
-  const currentStepIndex =
-    issue.status === 'FAILED'
-      ? workflowSteps.indexOf('FOR_TESTING')
-      : workflowSteps.indexOf(issue.status)
-  const Priority = priorityConfig[issue.priority]
   const activeProject = project || currentProject
   const isOwner = activeProject?.owner_id === user?.id
   const myRole = members.find((m) => m.user_id === user?.id)?.role
@@ -547,634 +627,971 @@ function IssueDetail() {
   const isDone = issue.status === 'DONE'
   const isReporter = issue.reporter_id === user?.id
   const canManageIssue = !isDone && (isOwner || isReporter)
-  const canDeleteIssue = isReporter
+  const canDeleteIssue = isReporter || isOwner
   const canInteract =
     isOwner ||
     isReporter ||
     issue.assignee_id === user?.id ||
     (myRole === 'QA' && (issue.status === 'FOR_TESTING' || issue.status === 'FAILED'))
 
+  const PriorityInfo = priorityConfig[issue.priority]
+  const StatusInfo = statusConfig[issue.status]
+  const PriorityIcon = PriorityInfo.icon
+  const ticketAnchor = `[${activeProject?.key ?? 'TASK'}-${issue.issue_number}]`
+
+  const currentStepIdx = (() => {
+    switch (issue.status) {
+      case 'OPEN':
+        return 0
+      case 'IN_PROGRESS':
+        return 1
+      case 'FOR_TESTING':
+      case 'FAILED':
+        return 2
+      case 'PASSED':
+        return 3
+      case 'DONE':
+        return 4
+      default:
+        return 0
+    }
+  })()
+
   return (
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
 
-      <div className="mx-auto w-full max-w-[1280px] flex-1 px-lg py-lg">
-        <div className="mb-md flex items-center gap-xs text-body-md text-on-surface-variant">
-          <Link to="/issues" className="hover:text-primary">
-            Issues
-          </Link>
-          <ChevronRight size={16} />
-          <span className="text-on-surface">
-            {activeProject?.key}-{issue.issue_number}
-          </span>
-        </div>
+      <div className="flex flex-1 flex-col min-w-0">
+        <TopBar />
 
-        <div className="mb-lg flex flex-wrap items-center justify-between gap-md">
-          <h1 className="text-headline-xl font-bold text-on-surface">
-            {issue.title}
-          </h1>
-          <div className="flex items-center gap-sm">
-            {canManageIssue && (
-              <button
-                type="button"
-                onClick={openEditModal}
-                className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-md font-semibold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
-              >
-                <Pencil size={16} />
-                <span>Edit Issue</span>
-              </button>
-            )}
-            {canDeleteIssue && (
-              <button
-                type="button"
-                onClick={handleDeleteIssue}
-                className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-md font-semibold text-rose-600 shadow-sm transition-colors hover:bg-rose-50 hover:border-rose-300"
-              >
-                <Trash2 size={16} />
-                <span>Delete</span>
-              </button>
-            )}
+        <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          {/* Breadcrumb & Navigation */}
+          <div className="mb-sm flex items-center justify-between text-body-md text-on-surface-variant">
+            <div className="flex items-center gap-xs">
+              <Link to="/issues" className="text-body-md text-on-surface-variant hover:text-primary transition-colors">
+                Backlog
+              </Link>
+              <ChevronRight size={14} className="text-outline" />
+              <span className="font-mono text-code-xs font-bold text-on-surface">
+                {ticketAnchor}
+              </span>
+            </div>
+            <div className="flex items-center gap-xs">
+              <span className="font-mono text-code-xs text-outline">ID: {issue.id.slice(0, 8)}</span>
+            </div>
           </div>
-        </div>
 
-        <div className="mb-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
-          <div className="relative flex items-center justify-between">
-            <div className="absolute left-[10%] right-[10%] top-1/2 h-1 -translate-y-1/2 bg-surface-container-highest" />
-            <div
-              className="absolute left-[10%] top-1/2 h-1 -translate-y-1/2 bg-primary"
-              style={{ width: `${(currentStepIndex / (workflowSteps.length - 1)) * 80}%` }}
-            />
+          {/* Issue Header Banner */}
+          <div className="mb-md flex flex-col gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-xs sm:gap-sm">
+                <span className="rounded bg-surface-container-highest px-xs py-0.5 font-mono text-code-sm font-bold text-on-surface tracking-tight">
+                  {ticketAnchor}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded border px-xs py-0.5 text-label-md font-semibold ${StatusInfo.badgeClass}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${StatusInfo.dotClass}`} />
+                  {StatusInfo.label}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${PriorityInfo.badgeClass}`}
+                >
+                  <PriorityIcon size={13} className={PriorityInfo.iconClass} />
+                  {PriorityInfo.label}
+                </span>
+              </div>
+              <h1 className="mt-xs text-headline-lg font-bold tracking-tight text-on-surface break-words">
+                {issue.title}
+              </h1>
+            </div>
 
-            {workflowSteps.map((step, i) => {
-              const done = i < currentStepIndex
-              const active = i === currentStepIndex
-              const label =
-                step === 'FOR_TESTING' && issue.status === 'FAILED' ? 'FAILED' : step.replace('_', ' ')
-              return (
-                <div key={step} className="relative z-10 flex w-1/5 flex-col items-center">
-                  {done && (
-                    <div className="mb-xs flex h-6 w-6 items-center justify-center rounded-full bg-primary">
-                      <Check className="text-on-primary" size={14} />
-                    </div>
-                  )}
-                  {active && (
-                    <div
-                      className={`mb-xs flex h-8 w-8 items-center justify-center rounded-full border-4 bg-surface-container-lowest ${
-                        issue.status === 'FAILED' ? 'border-error' : 'border-primary'
-                      }`}
-                    >
-                      <div
-                        className={`h-2 w-2 rounded-full ${issue.status === 'FAILED' ? 'bg-error' : 'bg-primary'}`}
-                      />
-                    </div>
-                  )}
-                  {!done && !active && (
-                    <div className="mb-xs h-6 w-6 rounded-full bg-surface-container-highest" />
-                  )}
-                  <span
-                    className={`text-label-md ${
-                      active
-                        ? `font-bold ${issue.status === 'FAILED' ? 'text-error' : 'text-primary'}`
-                        : 'text-on-surface-variant'
+            <div className="flex shrink-0 items-center gap-xs">
+              {canManageIssue && (
+                <button
+                  type="button"
+                  onClick={openEditModal}
+                  className="inline-flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                >
+                  <Pencil size={14} className="text-outline" />
+                  <span>Edit</span>
+                </button>
+              )}
+              {canDeleteIssue && (
+                <button
+                  type="button"
+                  onClick={handleDeleteIssue}
+                  className="inline-flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-error hover:bg-rose-500/10 hover:border-rose-500/30 transition-colors"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Precision Lab QA Workflow Stepper */}
+          <div className="mb-md overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest">
+            <div className="grid grid-cols-2 divide-y divide-outline-variant sm:grid-cols-5 sm:divide-y-0 sm:divide-x">
+              {workflowSteps.map((step, idx) => {
+                const isPassed = idx < currentStepIdx
+                const isCurrent = idx === currentStepIdx
+                const isFailureState = step.status === 'FOR_TESTING' && issue.status === 'FAILED'
+
+                return (
+                  <div
+                    key={step.status}
+                    className={`flex flex-col justify-between p-sm transition-colors ${
+                      isCurrent
+                        ? isFailureState
+                          ? 'bg-rose-500/10 text-rose-800 dark:text-rose-300'
+                          : 'bg-primary-fixed/40 text-primary'
+                        : isPassed
+                          ? 'bg-surface-container-low text-on-surface'
+                          : 'text-on-surface-variant'
                     }`}
                   >
-                    {label}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {actionError && (
-          <p className="mb-lg rounded-md bg-error-container px-md py-sm text-body-md text-on-error-container">
-            {actionError}
-          </p>
-        )}
-
-        <div className="grid grid-cols-1 gap-lg lg:grid-cols-3">
-          <div className="flex flex-col gap-lg lg:col-span-2">
-            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
-              <div className="border-b border-outline-variant px-md py-sm text-headline-md font-semibold text-on-surface">
-                Description
-              </div>
-              <div className="flex flex-col gap-md p-md text-body-md text-on-surface-variant">
-                <p>{issue.description || 'No description provided.'}</p>
-                {issue.expected_result && (
-                  <div>
-                    <h4 className="mb-xs font-bold text-on-surface">Expected Result</h4>
-                    <p>{issue.expected_result}</p>
-                  </div>
-                )}
-                {issue.actual_result && (
-                  <div>
-                    <h4 className="mb-xs font-bold text-on-surface">Actual Result</h4>
-                    <p>{issue.actual_result}</p>
-                  </div>
-                )}
-                {issue.steps_to_reproduce && (
-                  <div>
-                    <h4 className="mb-xs font-bold text-on-surface">Steps to Reproduce</h4>
-                    <p className="whitespace-pre-line">{issue.steps_to_reproduce}</p>
-                  </div>
-                )}
-                {(issue.environment_device || issue.environment_browser || issue.environment_app_version) && (
-                  <div>
-                    <h4 className="mb-xs font-bold text-on-surface">Environment Details</h4>
-                    <div className="rounded-sm border border-outline-variant bg-surface-container-low p-sm font-mono text-code-sm text-on-surface-variant">
-                      {issue.environment_device && <>Device/OS: {issue.environment_device}<br /></>}
-                      {issue.environment_browser && <>Browser: {issue.environment_browser}<br /></>}
-                      {issue.environment_app_version && <>App Version: {issue.environment_app_version}</>}
+                    <div className="flex items-center justify-between text-code-xs font-mono">
+                      <span className="font-semibold text-outline">{step.stepNumber}</span>
+                      {isPassed && <Check size={14} className="text-emerald-600" />}
+                      {isCurrent && isFailureState && <XCircle size={14} className="text-rose-600" />}
+                      {isCurrent && !isFailureState && (
+                        <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
+                      )}
+                    </div>
+                    <div className="mt-xs">
+                      <p
+                        className={`text-label-md font-bold uppercase tracking-wider ${
+                          isFailureState
+                            ? 'text-rose-700 dark:text-rose-400'
+                            : isCurrent
+                              ? 'text-primary'
+                              : 'text-on-surface'
+                        }`}
+                      >
+                        {isFailureState ? 'QA Failed' : step.label}
+                      </p>
+                      <p className="font-mono text-code-xs text-on-surface-variant">
+                        {isCurrent ? 'Current Stage' : isPassed ? 'Completed' : 'Pending'}
+                      </p>
                     </div>
                   </div>
-                )}
-              </div>
+                )
+              })}
             </div>
+          </div>
 
-            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
-              <div className="flex items-center justify-between border-b border-outline-variant px-md py-sm">
-                <span className="text-headline-md font-semibold text-on-surface">
-                  Attachments
-                </span>
-                <span className="text-label-md text-on-surface-variant">
-                  {attachments.length} {attachments.length === 1 ? 'file' : 'files'}
-                </span>
-              </div>
-              <div className="flex flex-col gap-sm p-md">
-                {attachments.length === 0 && (
-                  <p className="text-body-md text-on-surface-variant">
-                    No attachments.
-                  </p>
-                )}
-                {attachments.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-sm rounded-md border border-outline-variant p-sm hover:bg-surface-container-low transition-colors"
-                  >
-                    {isImageAttachment(a.mime_type) ? (
-                      <img
-                        src={a.storage_path}
-                        alt={a.file_name}
-                        className="h-10 w-10 shrink-0 rounded-sm object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-surface-container-highest text-on-surface-variant">
-                        <FileText size={18} />
-                      </div>
-                    )}
-                    <a
-                      href={a.storage_path}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="min-w-0 flex-1"
-                    >
-                      <div className="truncate text-body-md font-medium text-on-surface hover:text-primary hover:underline">
-                        {a.file_name}
-                      </div>
-                      <div className="flex items-center gap-xs text-[12px] text-on-surface-variant">
-                        <Paperclip size={12} />
-                        {formatBytes(a.file_size_bytes)}
-                        {a.uploader?.full_name && <span>· {a.uploader.full_name}</span>}
-                      </div>
-                    </a>
-                  </div>
-                ))}
-              </div>
+          {actionError && (
+            <div className="mb-md flex items-center gap-xs rounded-md border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{actionError}</span>
             </div>
+          )}
 
-            {issue.status === 'OPEN' && (
-              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised">
-                {canDev ? (
-                  <>
-                    <p className="mb-md text-body-md text-on-surface-variant">
-                      This issue is assigned to you. Start progress once you're ready to fix it.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={transitioning}
-                      onClick={() => updateStatus('IN_PROGRESS')}
-                      className="rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container disabled:opacity-60"
-                    >
-                      Start Progress
-                    </button>
-                  </>
-                ) : (
-                  <p className="text-body-md text-on-surface-variant">
-                    {assigneeMember
-                      ? `This issue is assigned to ${assigneeMember.full_name ?? 'the developer'}. Waiting for them to start progress.`
-                      : 'This issue is open and unassigned. Assign it to yourself or a developer to start progress.'}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {issue.status === 'IN_PROGRESS' && (
-              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised">
-                {canDev ? (
-                  <>
-                    <p className="mb-md text-body-md text-on-surface-variant">
-                      Once your fix is ready, submit it for QA testing.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={transitioning}
-                      onClick={() => updateStatus('FOR_TESTING')}
-                      className="flex items-center gap-xs rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container disabled:opacity-60"
-                    >
-                      <FlaskConical size={18} />
-                      Submit for Testing
-                    </button>
-                  </>
-                ) : (
-                  <p className="text-body-md text-on-surface-variant">
-                    {assigneeMember
-                      ? `Work is in progress by ${assigneeMember.full_name ?? 'the assigned developer'}.`
-                      : 'This issue is in progress.'}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {issue.status === 'FOR_TESTING' && (
-              <div
-                className={
-                  canQa
-                    ? 'rounded-lg border-2 border-primary bg-primary-fixed/40 p-md shadow-raised'
-                    : 'rounded-lg border border-outline-variant bg-surface-container-lowest p-md shadow-raised'
-                }
-              >
-                {canQa ? (
-                  <>
-                    <div className="mb-md flex items-center gap-sm">
-                      <ClipboardCheck className="text-primary" size={24} />
-                      <h3 className="text-headline-md font-semibold text-primary">
-                        QA Verification Required
+          {/* Workbench Split Layout */}
+          <div className="grid grid-cols-1 gap-md lg:grid-cols-3">
+            {/* Primary Workbench Column (Left 2 cols) */}
+            <div className="flex flex-col gap-md lg:col-span-2">
+              {/* QA Verification Bench / Action Surface */}
+              {issue.status === 'FOR_TESTING' && (
+                <div className="rounded-lg border-2 border-primary/50 bg-surface-container-lowest p-md">
+                  <div className="mb-sm flex items-center justify-between border-b border-outline-variant pb-xs">
+                    <div className="flex items-center gap-xs">
+                      <FlaskConical size={18} className="text-primary" />
+                      <h3 className="text-body-md font-bold uppercase tracking-wider text-primary">
+                        QA Verification Bench
                       </h3>
                     </div>
-                    <p className="mb-md text-body-md text-on-surface-variant">
-                      This issue is ready for testing. Verify the fix and
-                      record the result.
-                    </p>
-                    <textarea
-                      value={verification}
-                      onChange={(e) => setVerification(e.target.value)}
-                      rows={3}
-                      placeholder="Add verification comments or test notes here..."
-                      className="mb-md w-full rounded-md border border-outline-variant bg-surface-container-lowest p-sm text-body-md text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                    />
+                    <span className="rounded bg-amber-500/10 border border-amber-500/30 px-xs py-0.5 font-mono text-code-xs font-semibold text-amber-700 dark:text-amber-400">
+                      AWAITING QA VERIFICATION
+                    </span>
+                  </div>
 
-                    <div className="mb-md">
-                      <button
-                        type="button"
-                        onClick={() => verificationFileInputRef.current?.click()}
-                        className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-label-md font-semibold text-on-surface-variant hover:bg-surface-container-low"
-                      >
-                        <Paperclip size={14} />
-                        Attach Evidence
-                      </button>
-                      <input
-                        ref={verificationFileInputRef}
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={handleVerificationFilesSelected}
-                      />
+                  {canQa ? (
+                    <div className="space-y-sm">
+                      <p className="text-body-md text-on-surface-variant">
+                        Execute the reproduction steps against the deployed build. Record verification findings, attachments, and outcome.
+                      </p>
 
-                      {verificationFileError && (
-                        <p className="mt-sm text-body-md text-error">{verificationFileError}</p>
-                      )}
+                      <div>
+                        <label className="mb-xs block text-label-md font-semibold text-on-surface">
+                          Verification Notes & Observations
+                        </label>
+                        <textarea
+                          value={verification}
+                          onChange={(e) => setVerification(e.target.value)}
+                          rows={3}
+                          placeholder="e.g. Build v1.2.4 verified. Fix confirmed in Chrome 124. Steps 1-3 no longer trigger runtime exception."
+                          className="w-full rounded-md border border-outline-variant bg-surface-container-low p-sm font-sans text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest transition-colors"
+                        />
+                      </div>
 
-                      {verificationFiles.length > 0 && (
-                        <div className="mt-sm flex flex-col gap-xs">
-                          {verificationFiles.map((file, i) => (
-                            <div
-                              key={`${file.name}-${i}`}
-                              className="flex items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest p-sm"
-                            >
-                              <FileText className="shrink-0 text-on-surface-variant" size={16} />
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-body-md text-on-surface">
-                                  {file.name}
-                                </div>
-                                <div className="text-[12px] text-on-surface-variant">
-                                  {formatBytes(file.size)}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                aria-label="Remove file"
-                                onClick={() => removeVerificationFile(i)}
-                                className="shrink-0 rounded-sm p-xs text-on-surface-variant hover:bg-error-container hover:text-on-error-container"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
+                      {/* Evidence Attachment Bench */}
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => verificationFileInputRef.current?.click()}
+                            className="inline-flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-low px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                          >
+                            <Paperclip size={14} className="text-outline" />
+                            <span>Attach Run Evidence (Screenshots / Logs)</span>
+                          </button>
+                          <span className="font-mono text-code-xs text-outline">Max 50MB</span>
                         </div>
-                      )}
-                    </div>
+                        <input
+                          ref={verificationFileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={handleVerificationFilesSelected}
+                        />
 
-                    <div className="flex gap-md">
-                      <button
-                        type="button"
-                        disabled={verifying}
-                        onClick={() => handleQaVerify('PASSED')}
-                        className="flex flex-1 items-center justify-center gap-xs rounded-md bg-emerald-700 py-sm text-label-md font-semibold text-white hover:opacity-90 disabled:opacity-60"
-                      >
-                        <CircleCheck size={18} />
-                        Pass Verification
-                      </button>
-                      <button
-                        type="button"
-                        disabled={verifying}
-                        onClick={() => handleQaVerify('FAILED')}
-                        className="flex flex-1 items-center justify-center gap-xs rounded-md bg-error py-sm text-label-md font-semibold text-on-error hover:opacity-90 disabled:opacity-60"
-                      >
-                        <XCircle size={18} />
-                        Fail Verification
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-body-md text-on-surface-variant">
-                    This issue is ready for testing. Waiting on a QA member to
-                    verify it.
-                  </p>
-                )}
-              </div>
-            )}
+                        {verificationFileError && (
+                          <p className="mt-xs text-body-md text-error">{verificationFileError}</p>
+                        )}
 
-            {issue.status === 'FAILED' && (
-              <div className="rounded-lg border-2 border-error bg-error-container/40 p-md shadow-raised">
-                <h3 className="mb-sm text-headline-md font-semibold text-on-error-container">
-                  QA Verification Failed
-                </h3>
-                {latestFailure?.failure_reason && (
-                  <p className="mb-md text-body-md text-on-error-container">
-                    {latestFailure.failure_reason}
-                  </p>
-                )}
-                {latestFailureAttachments.length > 0 && (
-                  <div className="mb-md flex flex-wrap gap-sm">
-                    {latestFailureAttachments.map((a) =>
-                      isImageAttachment(a.mime_type) ? (
-                        <a key={a.id} href={a.storage_path} target="_blank" rel="noreferrer">
-                          <img
-                            src={a.storage_path}
-                            alt={a.file_name}
-                            className="h-16 w-16 rounded-sm border border-error/30 object-cover"
-                          />
-                        </a>
-                      ) : (
-                        <a
-                          key={a.id}
-                          href={a.storage_path}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-xs rounded-md border border-error/30 bg-surface-container-lowest px-sm py-xs text-body-md text-on-error-container hover:underline"
+                        {verificationFiles.length > 0 && (
+                          <div className="mt-xs flex flex-wrap gap-xs">
+                            {verificationFiles.map((file, i) => (
+                              <div
+                                key={`${file.name}-${i}`}
+                                className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 text-code-xs font-mono text-on-surface"
+                              >
+                                <FileText size={12} className="text-outline shrink-0" />
+                                <span className="max-w-[160px] truncate">{file.name}</span>
+                                <span className="text-outline">({formatBytes(file.size)})</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeVerificationFile(i)}
+                                  className="text-outline hover:text-error"
+                                  title="Remove"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Decisive Pass / Fail Workbench Controls */}
+                      <div className="pt-xs flex flex-col sm:flex-row gap-sm">
+                        <button
+                          type="button"
+                          disabled={verifying}
+                          onClick={() => handleQaVerify('PASSED')}
+                          className="flex flex-1 items-center justify-center gap-xs rounded-md bg-emerald-600 px-md py-sm text-label-md font-bold uppercase tracking-wider text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
                         >
-                          <FileText size={14} />
-                          {a.file_name}
-                        </a>
-                      ),
+                          <CircleCheck size={16} />
+                          <span>{verifying ? 'Recording…' : 'Pass Verification'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={verifying}
+                          onClick={() => handleQaVerify('FAILED')}
+                          className="flex flex-1 items-center justify-center gap-xs rounded-md bg-error px-md py-sm text-label-md font-bold uppercase tracking-wider text-on-error hover:bg-rose-700 transition-colors disabled:opacity-50"
+                        >
+                          <XCircle size={16} />
+                          <span>{verifying ? 'Recording…' : 'Fail Verification'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-sm text-body-md text-on-surface-variant">
+                      <Clock size={18} className="text-amber-600 shrink-0" />
+                      <span>
+                        This ticket is submitted for QA verification. A QA member or the project owner must verify and record pass/fail results.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* QA FAILED Alert Banner */}
+              {issue.status === 'FAILED' && (
+                <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-md">
+                  <div className="mb-xs flex items-center justify-between">
+                    <div className="flex items-center gap-xs text-rose-800 dark:text-rose-300">
+                      <XCircle size={18} />
+                      <h3 className="text-body-md font-bold uppercase tracking-wider">
+                        QA Verification Failed
+                      </h3>
+                    </div>
+                    {latestFailure && (
+                      <span className="font-mono text-code-xs text-rose-700 dark:text-rose-400">
+                        {new Date(latestFailure.verified_at).toLocaleString()}
+                      </span>
                     )}
                   </div>
-                )}
-                {canDev ? (
-                  <button
-                    type="button"
-                    disabled={transitioning}
-                    onClick={() => updateStatus('IN_PROGRESS')}
-                    className="rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container disabled:opacity-60"
-                  >
-                    Resume Work
-                  </button>
-                ) : (
-                  <p className="text-body-md text-on-error-container">
-                    {assigneeMember
-                      ? `Waiting on the assigned developer (${assigneeMember.full_name ?? 'the assignee'}) to resume work.`
-                      : 'Waiting on the assigned developer to resume work.'}
-                  </p>
-                )}
-              </div>
-            )}
 
-            {issue.status === 'PASSED' && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-md shadow-raised">
-                {isOwner ? (
-                  <>
-                    <p className="mb-md text-body-md text-emerald-800">
-                      This issue passed QA. Mark it done to close it out.
+                  {latestFailure?.failure_reason ? (
+                    <div className="mt-xs rounded border border-rose-500/30 bg-surface-container-lowest p-sm text-body-md text-on-surface">
+                      <p className="font-mono text-code-xs font-bold text-rose-700 dark:text-rose-400 mb-xs">
+                        FAILURE ANALYSIS / TEST LOG:
+                      </p>
+                      <p className="whitespace-pre-line">{latestFailure.failure_reason}</p>
+                    </div>
+                  ) : (
+                    <p className="text-body-md text-rose-800 dark:text-rose-300">
+                      QA flagged this fix as failed. Review attached evidence and resume development.
                     </p>
+                  )}
+
+                  {latestFailureAttachments.length > 0 && (
+                    <div className="mt-sm">
+                      <p className="mb-xs font-mono text-code-xs font-semibold text-rose-800 dark:text-rose-300">
+                        ATTACHED FAILURE EVIDENCE ({latestFailureAttachments.length}):
+                      </p>
+                      <div className="flex flex-wrap gap-xs">
+                        {latestFailureAttachments.map((a) =>
+                          isImageAttachment(a.mime_type, a.file_name) ? (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() =>
+                                setPreviewImage({
+                                  url: a.storage_path,
+                                  title: a.file_name,
+                                  size: formatBytes(a.file_size_bytes),
+                                })
+                              }
+                              className="group relative block overflow-hidden rounded border border-rose-500/30 bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer text-left"
+                              title="Click to preview image"
+                            >
+                              <img
+                                src={a.storage_path}
+                                alt={a.file_name}
+                                className="h-16 w-24 object-cover group-hover:scale-105 transition-transform"
+                              />
+                            </button>
+                          ) : (
+                            <a
+                              key={a.id}
+                              href={a.storage_path}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-xs rounded border border-rose-500/30 bg-surface-container-lowest px-sm py-xs font-mono text-code-xs text-on-surface hover:underline"
+                            >
+                              <FileText size={14} className="text-rose-600" />
+                              <span className="truncate max-w-[140px]">{a.file_name}</span>
+                            </a>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {canDev && (
+                    <div className="mt-sm pt-xs border-t border-rose-500/20 flex justify-end">
+                      <button
+                        type="button"
+                        disabled={transitioning}
+                        onClick={() => updateStatus('IN_PROGRESS')}
+                        className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
+                      >
+                        <RotateCcw size={14} />
+                        <span>Resume Development</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* QA PASSED Banner */}
+              {issue.status === 'PASSED' && (
+                <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm">
+                  <div>
+                    <div className="flex items-center gap-xs text-emerald-800 dark:text-emerald-300">
+                      <CircleCheck size={18} />
+                      <h3 className="text-body-md font-bold uppercase tracking-wider">
+                        QA Verification Passed
+                      </h3>
+                    </div>
+                    <p className="mt-xs text-body-md text-emerald-900 dark:text-emerald-200">
+                      All test criteria verified successfully. Ready for final closure by project owner.
+                    </p>
+                  </div>
+                  {isOwner && (
                     <button
                       type="button"
                       disabled={transitioning}
                       onClick={() => updateStatus('DONE')}
-                      className="rounded-md bg-emerald-700 px-md py-sm text-label-md font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                      className="inline-flex shrink-0 items-center justify-center gap-xs rounded-md bg-emerald-700 px-md py-xs text-label-md font-bold uppercase tracking-wider text-white hover:bg-emerald-800 transition-colors disabled:opacity-50"
                     >
-                      Mark Done
+                      <Check size={16} />
+                      <span>Close Ticket (Done)</span>
                     </button>
-                  </>
+                  )}
+                </div>
+              )}
+
+              {/* Developer Start Progress Banner */}
+              {issue.status === 'OPEN' && (
+                <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm">
+                  <div>
+                    <p className="text-body-md font-medium text-on-surface">
+                      Status: <span className="font-mono font-semibold">OPEN (TRIAGE)</span>
+                    </p>
+                    <p className="text-body-md text-on-surface-variant">
+                      {isAssignee
+                        ? 'This defect is assigned to you. Move to development once active work commences.'
+                        : assigneeMember
+                          ? `Assigned to ${assigneeMember.full_name ?? 'developer'}. Waiting for work to start.`
+                          : 'Unassigned defect. Assign an operator to begin resolution.'}
+                    </p>
+                  </div>
+                  {canDev && (
+                    <button
+                      type="button"
+                      disabled={transitioning}
+                      onClick={() => updateStatus('IN_PROGRESS')}
+                      className="inline-flex shrink-0 items-center justify-center gap-xs rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
+                    >
+                      <Code2 size={16} />
+                      <span>Start Development</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* In Progress Submit for QA Banner */}
+              {issue.status === 'IN_PROGRESS' && (
+                <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm">
+                  <div>
+                    <p className="text-body-md font-medium text-on-surface">
+                      Status: <span className="font-mono font-semibold text-primary">IN DEVELOPMENT</span>
+                    </p>
+                    <p className="text-body-md text-on-surface-variant">
+                      {isAssignee
+                        ? 'Active development in progress. Once code is deployed to the test target, submit for QA.'
+                        : `Work in progress by ${assigneeMember?.full_name ?? 'the assigned developer'}.`}
+                    </p>
+                  </div>
+                  {canDev && (
+                    <button
+                      type="button"
+                      disabled={transitioning}
+                      onClick={() => updateStatus('FOR_TESTING')}
+                      className="inline-flex shrink-0 items-center justify-center gap-xs rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
+                    >
+                      <FlaskConical size={16} />
+                      <span>Submit for Testing</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Closed State Banner */}
+              {issue.status === 'DONE' && (
+                <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md flex items-center gap-sm">
+                  <CircleCheck size={20} className="text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-body-md font-semibold text-on-surface">Defect Closed and Resolved</p>
+                    <p className="font-mono text-code-xs text-on-surface-variant">
+                      All verification stages satisfied. Defect resolved.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Defect Description Panel */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-xs flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                    Defect Description
+                  </h2>
+                  <span className="font-mono text-code-xs text-outline">PRIMARY SPEC</span>
+                </div>
+                <div className="pt-xs text-body-md leading-relaxed text-on-surface whitespace-pre-line">
+                  {issue.description || (
+                    <span className="text-on-surface-variant italic">No description provided.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Steps to Reproduce */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-xs flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                    Steps to Reproduce
+                  </h2>
+                  <span className="font-mono text-code-xs text-outline">EXECUTION STEPS</span>
+                </div>
+                {issue.steps_to_reproduce ? (
+                  <div className="mt-xs rounded-md border border-outline-variant bg-surface-container-low p-sm font-mono text-code-sm leading-relaxed text-on-surface whitespace-pre-line">
+                    {issue.steps_to_reproduce}
+                  </div>
                 ) : (
-                  <p className="text-body-md text-emerald-800">
-                    This issue passed QA. Waiting on the project owner to
-                    close it.
+                  <p className="pt-xs text-body-md text-on-surface-variant italic">
+                    No discrete reproduction sequence recorded.
                   </p>
                 )}
               </div>
-            )}
 
-            {issue.status === 'DONE' && (
-              <div className="flex items-center gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md text-body-md text-on-surface-variant">
-                <CircleCheck className="text-emerald-600" size={20} />
-                This issue is done.
-              </div>
-            )}
-          </div>
+              {/* Expected vs. Actual Outcomes Matrix */}
+              <div className="grid grid-cols-1 gap-sm sm:grid-cols-2">
+                <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                  <div className="mb-xs flex items-center justify-between border-b border-outline-variant pb-xs">
+                    <span className="text-label-md font-bold uppercase tracking-wider text-on-surface">
+                      Expected Outcome
+                    </span>
+                    <span className="rounded bg-emerald-500/10 px-1 py-0.2 font-mono text-code-xs text-emerald-700 dark:text-emerald-400">
+                      TARGET
+                    </span>
+                  </div>
+                  <div className="pt-xs text-body-md text-on-surface">
+                    {issue.expected_result || (
+                      <span className="text-on-surface-variant italic">Not documented</span>
+                    )}
+                  </div>
+                </div>
 
-          <div className="flex flex-col gap-lg">
-            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
-              <div className="border-b border-outline-variant px-md py-sm text-headline-md font-semibold text-on-surface">
-                Details
-              </div>
-              <div className="flex flex-col gap-md p-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-label-md text-on-surface-variant">Status</span>
-                  <span className="flex items-center gap-xs rounded-sm bg-primary-fixed-dim px-sm py-xs text-label-md font-semibold text-on-primary-fixed">
-                    <FlaskConical size={14} />
-                    {issue.status.replace('_', ' ')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-label-md text-on-surface-variant">Priority</span>
-                  <span
-                    className={`flex items-center gap-xs text-label-md font-semibold ${Priority.className}`}
-                  >
-                    <Priority.icon size={14} />
-                    <span>{issue.priority}</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-label-md text-on-surface-variant">Type</span>
-                  <span className="flex items-center gap-xs text-label-md font-semibold text-on-surface">
-                    <Bug className="text-rose-600" size={18} />
-                    Bug
-                  </span>
+                <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                  <div className="mb-xs flex items-center justify-between border-b border-outline-variant pb-xs">
+                    <span className="text-label-md font-bold uppercase tracking-wider text-on-surface">
+                      Actual Observed Failure
+                    </span>
+                    <span className="rounded bg-rose-500/10 px-1 py-0.2 font-mono text-code-xs text-rose-700 dark:text-rose-400">
+                      ANOMALY
+                    </span>
+                  </div>
+                  <div className="pt-xs text-body-md text-on-surface">
+                    {issue.actual_result || (
+                      <span className="text-on-surface-variant italic">Not documented</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
-              <div className="border-b border-outline-variant px-md py-sm text-headline-md font-semibold text-on-surface">
-                People
-              </div>
-              <div className="flex flex-col gap-md p-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-label-md text-on-surface-variant">Assignee</span>
-                  {assigneeMember ? (
-                    <div className="flex items-center gap-sm">
-                      <Avatar
-                        name={assigneeMember.full_name}
-                        avatarUrl={assigneeMember.avatar_url}
-                        size={24}
-                      />
-                      <span className="text-body-md font-medium text-on-surface">
-                        {assigneeMember.full_name ?? 'Unnamed'}
+              {/* Environment Manifest Inspector */}
+              {(issue.environment_device ||
+                issue.environment_browser ||
+                issue.environment_app_version) && (
+                <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                  <div className="mb-xs flex items-center justify-between border-b border-outline-variant pb-xs">
+                    <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                      Environment Manifest
+                    </h2>
+                    <span className="font-mono text-code-xs text-outline">TARGET RUNTIME</span>
+                  </div>
+                  <div className="pt-xs grid grid-cols-1 gap-xs sm:grid-cols-3">
+                    <div className="rounded border border-outline-variant bg-surface-container-low p-sm">
+                      <span className="block font-mono text-code-xs uppercase text-on-surface-variant">
+                        Device / OS
+                      </span>
+                      <span className="font-mono text-code-sm font-semibold text-on-surface">
+                        {issue.environment_device || '—'}
                       </span>
                     </div>
-                  ) : (
-                    <span className="text-body-md text-on-surface-variant italic">
-                      Unassigned
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-label-md text-on-surface-variant">Reporter</span>
-                  <div className="flex items-center gap-sm">
-                    <Avatar name={reporter?.full_name} avatarUrl={reporter?.avatar_url} size={24} />
-                    <span className="text-body-md text-on-surface">
-                      {reporter?.full_name ?? 'Unknown'}
-                    </span>
+                    <div className="rounded border border-outline-variant bg-surface-container-low p-sm">
+                      <span className="block font-mono text-code-xs uppercase text-on-surface-variant">
+                        Browser Engine
+                      </span>
+                      <span className="font-mono text-code-sm font-semibold text-on-surface">
+                        {issue.environment_browser || '—'}
+                      </span>
+                    </div>
+                    <div className="rounded border border-outline-variant bg-surface-container-low p-sm">
+                      <span className="block font-mono text-code-xs uppercase text-on-surface-variant">
+                        Build / Version
+                      </span>
+                      <span className="font-mono text-code-sm font-semibold text-on-surface">
+                        {issue.environment_app_version || '—'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
-              <div className="border-b border-outline-variant px-md py-sm text-headline-md font-semibold text-on-surface">
-                Dates
-              </div>
-              <div className="flex flex-col gap-md p-md text-body-md text-on-surface-variant">
-                <div className="flex justify-between">
-                  <span>Created</span>
-                  <span>{new Date(issue.created_at).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Updated</span>
-                  <span>{new Date(issue.updated_at).toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-xl">
-          <h3 className="mb-md text-headline-lg font-semibold text-on-surface">
-            Activity
-          </h3>
-          <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
-            {isDone ? (
-              <p className="mb-lg text-body-md text-on-surface-variant">
-                This issue is done. Comments are closed.
-              </p>
-            ) : !canInteract ? (
-              <p className="mb-lg text-body-md text-on-surface-variant">
-                Only the reporter, assignee, or a verifying QA member can
-                comment on this issue.
-              </p>
-            ) : (
-              <form onSubmit={handlePostComment} className="mb-lg flex gap-md">
-                <Avatar name={profile?.full_name} avatarUrl={profile?.avatar_url} size={32} className="shrink-0" />
-                <div className="flex-1">
-                  <textarea
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    rows={2}
-                    placeholder="Add a comment..."
-                    className="mb-sm w-full rounded-md border border-outline-variant bg-surface-container-lowest p-sm text-body-md text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={postingComment || !comment.trim()}
-                      className="rounded-md bg-surface-container-low px-md py-sm text-label-md font-semibold text-on-surface-variant hover:bg-surface-container-high disabled:opacity-60"
-                    >
-                      {postingComment ? 'Saving…' : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            )}
-
-            <div className="relative flex flex-col gap-lg">
-              {(comments.length > 0 || activity.length > 0) && (
-                <div className="absolute inset-y-0 left-4 z-0 w-0.5 -translate-x-1/2 bg-outline-variant" />
               )}
 
-              {[
-                ...comments.map((c) => ({ type: 'comment' as const, at: c.created_at, data: c })),
-                ...activity.map((a) => ({ type: 'activity' as const, at: a.created_at, data: a })),
-              ]
-                .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
-                .map((entry) =>
-                  entry.type === 'comment' ? (
-                    <div key={entry.data.id} className="relative z-10 flex items-start gap-md">
+              {/* Attachments Bench */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-xs flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <div className="flex items-center gap-xs">
+                    <Paperclip size={16} className="text-outline" />
+                    <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                      Evidence & Artifacts
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-sm">
+                    <span className="font-mono text-code-xs text-outline">
+                      {attachments.length} {attachments.length === 1 ? 'FILE' : 'FILES'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={uploadingAttachment}
+                      onClick={() => attachmentInputRef.current?.click()}
+                      className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs font-semibold text-on-surface hover:bg-surface-container transition-colors disabled:opacity-50"
+                    >
+                      <UploadCloud size={12} />
+                      <span>{uploadingAttachment ? 'UPLOADING…' : 'UPLOAD'}</span>
+                    </button>
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleUploadAttachment}
+                    />
+                  </div>
+                </div>
+
+                {attachmentError && (
+                  <p className="my-xs text-body-md text-error">{attachmentError}</p>
+                )}
+
+                {attachments.length === 0 ? (
+                  <p className="pt-xs text-body-md text-on-surface-variant italic">
+                    No attachments uploaded for this ticket.
+                  </p>
+                ) : (
+                  <div className="pt-xs grid grid-cols-1 gap-xs sm:grid-cols-2">
+                    {attachments.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between gap-xs rounded-md border border-outline-variant bg-surface-container-low p-xs hover:bg-surface-container transition-colors"
+                      >
+                        <div className="flex min-w-0 items-center gap-xs">
+                          {isImageAttachment(a.mime_type, a.file_name) ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewImage({
+                                  url: a.storage_path,
+                                  title: a.file_name,
+                                  size: formatBytes(a.file_size_bytes),
+                                  uploader: a.uploader?.full_name ?? undefined,
+                                })
+                              }
+                              className="group shrink-0 overflow-hidden rounded border border-outline-variant focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                              title="Click to preview image"
+                            >
+                              <img
+                                src={a.storage_path}
+                                alt={a.file_name}
+                                className="h-9 w-9 object-cover group-hover:scale-110 transition-transform"
+                              />
+                            </button>
+                          ) : (
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-outline-variant bg-surface-container text-on-surface-variant">
+                              <FileText size={16} />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            {isImageAttachment(a.mime_type, a.file_name) ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewImage({
+                                    url: a.storage_path,
+                                    title: a.file_name,
+                                    size: formatBytes(a.file_size_bytes),
+                                    uploader: a.uploader?.full_name ?? undefined,
+                                  })
+                                }
+                                className="block truncate font-mono text-code-xs font-semibold text-on-surface hover:text-primary transition-colors text-left cursor-pointer"
+                                title="Click to preview image"
+                              >
+                                {a.file_name}
+                              </button>
+                            ) : (
+                              <a
+                                href={a.storage_path}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block truncate font-mono text-code-xs font-semibold text-on-surface hover:text-primary transition-colors"
+                              >
+                                {a.file_name}
+                              </a>
+                            )}
+                            <p className="font-mono text-code-xs text-outline">
+                              {formatBytes(a.file_size_bytes)} {a.uploader?.full_name ? `· ${a.uploader.full_name}` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        {canManageIssue && (
+                          <button
+                            type="button"
+                            onClick={() => promptDeleteAttachment(a.id, a.file_name)}
+                            className="p-xs text-outline hover:text-error transition-colors"
+                            title="Delete file"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Activity & Comments Timeline */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-md flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <div className="flex items-center gap-xs">
+                    <MessageSquare size={16} className="text-outline" />
+                    <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                      Activity & Discussion Timeline
+                    </h2>
+                  </div>
+                  <span className="font-mono text-code-xs text-outline">
+                    {comments.length} NOTES · {activity.length} AUDIT EVENTS
+                  </span>
+                </div>
+
+                {/* Comment Entry Form */}
+                {isDone ? (
+                  <p className="mb-md text-body-md text-on-surface-variant font-mono text-code-xs">
+                    [TICKET CLOSED] Comments and discussions are locked.
+                  </p>
+                ) : !canInteract ? (
+                  <p className="mb-md text-body-md text-on-surface-variant">
+                    Only ticket collaborators (assignee, reporter, or QA verifier) may add comments.
+                  </p>
+                ) : (
+                  <form onSubmit={handlePostComment} className="mb-md">
+                    <div className="flex gap-sm">
                       <Avatar
-                        name={entry.data.author?.full_name}
-                        avatarUrl={entry.data.author?.avatar_url}
+                        name={profile?.full_name}
+                        avatarUrl={profile?.avatar_url}
                         size={32}
-                        className="shrink-0 border-4 border-surface-container-lowest"
+                        className="shrink-0"
                       />
-                      <div className="flex-1 rounded-md border border-outline-variant bg-surface-container-low p-sm">
-                        <div className="mb-xs flex items-center justify-between">
-                          <span className="text-label-md text-on-surface">
-                            {entry.data.author?.full_name ?? 'Unknown'}
-                          </span>
-                          <span className="text-[12px] text-on-surface-variant">
-                            {new Date(entry.data.created_at).toLocaleString()}
+                      <div className="flex-1">
+                        <textarea
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          rows={2}
+                          placeholder="Add engineering notes, test updates, or repro questions…"
+                          className="w-full rounded-md border border-outline-variant bg-surface-container-low p-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest transition-colors"
+                        />
+                        <div className="mt-xs flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={postingComment || !comment.trim()}
+                            className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
+                          >
+                            <span>{postingComment ? 'Posting…' : 'Post Note'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </form>
+                )}
+
+                {/* Chronological Timeline */}
+                <div className="space-y-sm">
+                  {[
+                    ...comments.map((c) => ({ type: 'comment' as const, at: c.created_at, data: c })),
+                    ...activity.map((a) => ({ type: 'activity' as const, at: a.created_at, data: a })),
+                  ]
+                    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+                    .map((entry) =>
+                      entry.type === 'comment' ? (
+                        <div
+                          key={entry.data.id}
+                          className="rounded-md border border-outline-variant bg-surface-container-low p-sm"
+                        >
+                          <div className="mb-xs flex items-center justify-between">
+                            <div className="flex items-center gap-xs">
+                              <Avatar
+                                name={entry.data.author?.full_name}
+                                avatarUrl={entry.data.author?.avatar_url}
+                                size={20}
+                              />
+                              <span className="text-body-md font-semibold text-on-surface">
+                                {entry.data.author?.full_name ?? 'Unknown'}
+                              </span>
+                            </div>
+                            <span className="font-mono text-code-xs text-outline">
+                              {new Date(entry.data.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-body-md text-on-surface whitespace-pre-line pl-6">
+                            {entry.data.content}
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          key={entry.data.id}
+                          className="flex items-center justify-between rounded border border-outline-variant/60 bg-surface-container-lowest px-sm py-xs text-code-xs font-mono text-on-surface-variant"
+                        >
+                          <div className="flex items-center gap-xs">
+                            <Code2 size={13} className="text-outline shrink-0" />
+                            <span>
+                              <strong className="text-on-surface">
+                                {entry.data.actor?.full_name ?? 'System'}
+                              </strong>{' '}
+                              {activityText[entry.data.action]?.(entry.data) ?? entry.data.action}
+                            </span>
+                          </div>
+                          <span className="text-outline shrink-0 ml-xs">
+                            {new Date(entry.data.created_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                           </span>
                         </div>
-                        <p className="text-body-md text-on-surface-variant">
-                          {entry.data.content}
+                      ),
+                    )}
+
+                  {comments.length === 0 && activity.length === 0 && (
+                    <p className="text-body-md text-on-surface-variant italic">
+                      No activity recorded on this issue yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar Meta Rail (Right 1 col) */}
+            <div className="flex flex-col gap-md">
+              {/* Ticket State Overview */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-sm flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                    Attributes
+                  </h2>
+                  <span className="font-mono text-code-xs text-outline">METRICS</span>
+                </div>
+
+                <div className="space-y-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-code-xs uppercase text-on-surface-variant">
+                      Status
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded border px-xs py-0.5 text-label-md font-semibold ${StatusInfo.badgeClass}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${StatusInfo.dotClass}`} />
+                      {StatusInfo.label}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-code-xs uppercase text-on-surface-variant">
+                      Priority
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${PriorityInfo.badgeClass}`}
+                    >
+                      <PriorityIcon size={13} className={PriorityInfo.iconClass} />
+                      {PriorityInfo.label}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-code-xs uppercase text-on-surface-variant">
+                      Type
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-xs py-0.5 font-mono text-code-xs font-semibold text-rose-700 dark:text-rose-400">
+                      <Bug size={13} className="text-rose-600" />
+                      BUG DEFECT
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-code-xs uppercase text-on-surface-variant">
+                      Project
+                    </span>
+                    <span className="font-mono text-code-xs font-bold text-on-surface">
+                      {activeProject?.name ?? '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* People & Roles */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-sm flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                    Personnel
+                  </h2>
+                  <span className="font-mono text-code-xs text-outline">ROLES</span>
+                </div>
+
+                <div className="space-y-sm">
+                  <div>
+                    <span className="block font-mono text-code-xs uppercase text-on-surface-variant mb-xs">
+                      Assignee
+                    </span>
+                    {assigneeMember ? (
+                      <div className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low p-xs">
+                        <Avatar
+                          name={assigneeMember.full_name}
+                          avatarUrl={assigneeMember.avatar_url}
+                          size={24}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-body-md font-medium text-on-surface">
+                            {assigneeMember.full_name ?? 'Unnamed'}
+                          </p>
+                          <p className="font-mono text-code-xs uppercase text-outline">
+                            {assigneeMember.role}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded border border-dashed border-outline-variant p-xs text-center text-body-md text-on-surface-variant italic">
+                        Unassigned
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="block font-mono text-code-xs uppercase text-on-surface-variant mb-xs">
+                      Reporter
+                    </span>
+                    <div className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low p-xs">
+                      <Avatar
+                        name={reporter?.full_name}
+                        avatarUrl={reporter?.avatar_url}
+                        size={24}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-body-md font-medium text-on-surface">
+                          {reporter?.full_name ?? 'Unknown'}
+                        </p>
+                        <p className="font-mono text-code-xs uppercase text-outline">
+                          Originator
                         </p>
                       </div>
                     </div>
-                  ) : (
-                    <div key={entry.data.id} className="relative z-10 flex items-start gap-md">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-4 border-surface-container-lowest bg-surface-container-highest text-on-surface-variant">
-                        <Code2 size={16} />
-                      </div>
-                      <div className="flex-1 py-xs">
-                        <span className="text-body-md text-on-surface-variant">
-                          <span className="text-label-md text-on-surface">
-                            {entry.data.actor?.full_name ?? 'System'}
-                          </span>{' '}
-                          {activityText[entry.data.action]?.(entry.data) ?? entry.data.action}
-                        </span>
-                        <span className="ml-sm text-[12px] text-outline">
-                          {new Date(entry.data.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  ),
-                )}
+                  </div>
+                </div>
+              </div>
 
-              {comments.length === 0 && activity.length === 0 && (
-                <p className="text-body-md text-on-surface-variant">No activity yet.</p>
-              )}
+              {/* Timestamps */}
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <div className="mb-sm flex items-center justify-between border-b border-outline-variant pb-xs">
+                  <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
+                    Timestamps
+                  </h2>
+                  <span className="font-mono text-code-xs text-outline">DATES</span>
+                </div>
+
+                <div className="space-y-xs font-mono text-code-xs">
+                  <div className="flex justify-between text-on-surface-variant">
+                    <span>CREATED:</span>
+                    <span className="font-semibold text-on-surface">
+                      {new Date(issue.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-on-surface-variant">
+                    <span>UPDATED:</span>
+                    <span className="font-semibold text-on-surface">
+                      {new Date(issue.updated_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-on-surface-variant">
+                    <span>KEY:</span>
+                    <span className="font-semibold text-primary">{ticketAnchor}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </main>
       </div>
 
       {/* Edit Issue Modal */}
@@ -1184,31 +1601,28 @@ function IssueDetail() {
             className="fixed inset-0"
             onClick={() => !savingEdit && setEditModalOpen(false)}
           />
-          <div className="relative z-10 flex max-h-[90vh] w-full max-w-[680px] flex-col rounded-xl border border-outline-variant bg-surface-container-lowest shadow-raised">
-            <div className="flex items-center justify-between border-b border-outline-variant px-lg py-md">
+          <div className="relative z-10 flex max-h-[90vh] w-full max-w-[700px] flex-col rounded-lg border border-outline-variant bg-surface-container-lowest shadow-sm">
+            <div className="flex items-center justify-between border-b border-outline-variant px-md py-sm">
               <div className="flex items-center gap-xs">
-                <Pencil size={18} className="text-primary" />
+                <Pencil size={16} className="text-primary" />
                 <h2 className="text-headline-md font-bold text-on-surface">
-                  Edit Issue {activeProject?.key}-{issue.issue_number}
+                  Edit Issue {ticketAnchor}
                 </h2>
               </div>
               <button
                 type="button"
                 disabled={savingEdit}
                 onClick={() => setEditModalOpen(false)}
-                className="rounded-md p-xs text-outline hover:bg-surface-container hover:text-on-surface"
+                className="rounded p-xs text-outline hover:bg-surface-container hover:text-on-surface transition-colors"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
-            <form
-              onSubmit={handleSaveEdit}
-              className="flex flex-1 flex-col overflow-hidden"
-            >
-              <div className="flex-1 overflow-y-auto p-lg space-y-md">
+            <form onSubmit={handleSaveEdit} className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-md space-y-md">
                 {editError && (
-                  <p className="rounded-md bg-error-container p-sm text-body-md text-on-error-container">
+                  <p className="rounded border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">
                     {editError}
                   </p>
                 )}
@@ -1222,7 +1636,7 @@ function IssueDetail() {
                     required
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                    className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                     placeholder="Issue title"
                   />
                 </div>
@@ -1235,7 +1649,7 @@ function IssueDetail() {
                     <select
                       value={editPriority}
                       onChange={(e) => setEditPriority(e.target.value as IssuePriority)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md font-semibold text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md font-semibold text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                     >
                       {(Object.keys(priorityConfig) as IssuePriority[]).map((p) => (
                         <option key={p} value={p}>
@@ -1252,12 +1666,12 @@ function IssueDetail() {
                     <select
                       value={editAssigneeId}
                       onChange={(e) => setEditAssigneeId(e.target.value)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                     >
                       <option value="">Unassigned</option>
                       {members.map((m) => (
                         <option key={m.user_id} value={m.user_id}>
-                          {m.full_name ?? 'Unnamed'}
+                          {m.full_name ?? 'Unnamed'} ({m.role})
                         </option>
                       ))}
                     </select>
@@ -1272,7 +1686,7 @@ function IssueDetail() {
                     rows={3}
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                    className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                     placeholder="Detailed explanation of the issue"
                   />
                 </div>
@@ -1286,7 +1700,7 @@ function IssueDetail() {
                       rows={2}
                       value={editExpectedResult}
                       onChange={(e) => setEditExpectedResult(e.target.value)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                       placeholder="What should have happened"
                     />
                   </div>
@@ -1298,7 +1712,7 @@ function IssueDetail() {
                       rows={2}
                       value={editActualResult}
                       onChange={(e) => setEditActualResult(e.target.value)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                       placeholder="What actually happened"
                     />
                   </div>
@@ -1312,126 +1726,54 @@ function IssueDetail() {
                     rows={3}
                     value={editStepsToReproduce}
                     onChange={(e) => setEditStepsToReproduce(e.target.value)}
-                    className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-sm text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest font-mono text-code-sm"
+                    className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs font-mono text-code-sm text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                     placeholder="1. Go to...&#10;2. Click on...&#10;3. See error"
                   />
                 </div>
 
                 <div>
                   <label className="mb-xs block text-label-md font-bold text-on-surface">
-                    Environment Details
+                    Environment Manifest
                   </label>
-                  <div className="grid grid-cols-1 gap-sm sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-xs sm:grid-cols-3">
                     <input
                       type="text"
                       value={editDevice}
                       onChange={(e) => setEditDevice(e.target.value)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded border border-outline-variant bg-surface-container-low px-xs py-1 font-mono text-code-xs text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                       placeholder="Device / OS"
                     />
                     <input
                       type="text"
                       value={editBrowser}
                       onChange={(e) => setEditBrowser(e.target.value)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded border border-outline-variant bg-surface-container-low px-xs py-1 font-mono text-code-xs text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                       placeholder="Browser"
                     />
                     <input
                       type="text"
                       value={editAppVersion}
                       onChange={(e) => setEditAppVersion(e.target.value)}
-                      className="w-full rounded-md border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
+                      className="w-full rounded border border-outline-variant bg-surface-container-low px-xs py-1 font-mono text-code-xs text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                       placeholder="App Version"
                     />
                   </div>
                 </div>
-
-                <div>
-                  <div className="mb-xs flex items-center justify-between">
-                    <label className="text-label-md font-bold text-on-surface">
-                      Attachments ({attachments.length})
-                    </label>
-                    <button
-                      type="button"
-                      disabled={uploadingAttachment}
-                      onClick={() => attachmentInputRef.current?.click()}
-                      className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-label-md font-semibold text-on-surface-variant shadow-sm hover:bg-surface-container-low disabled:opacity-60"
-                    >
-                      <UploadCloud size={16} />
-                      {uploadingAttachment ? 'Uploading…' : 'Upload Attachment'}
-                    </button>
-                    <input
-                      ref={attachmentInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={handleUploadAttachment}
-                    />
-                  </div>
-
-                  {attachmentError && (
-                    <p className="mb-xs text-body-md text-error">{attachmentError}</p>
-                  )}
-
-                  {attachments.length > 0 ? (
-                    <div className="space-y-xs">
-                      {attachments.map((a) => (
-                        <div
-                          key={a.id}
-                          className="flex items-center justify-between gap-sm rounded-md border border-outline-variant bg-surface-container-low p-sm"
-                        >
-                          <div className="flex min-w-0 items-center gap-sm">
-                            {isImageAttachment(a.mime_type) ? (
-                              <img
-                                src={a.storage_path}
-                                alt={a.file_name}
-                                className="h-8 w-8 shrink-0 rounded-sm object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-surface-container-highest text-on-surface-variant">
-                                <FileText size={16} />
-                              </div>
-                            )}
-                            <div className="min-w-0 truncate">
-                              <p className="truncate text-body-md font-medium text-on-surface">
-                                {a.file_name}
-                              </p>
-                              <p className="text-[12px] text-on-surface-variant">
-                                {formatBytes(a.file_size_bytes)}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            aria-label="Delete attachment"
-                            onClick={() => promptDeleteAttachment(a.id, a.file_name)}
-                            className="shrink-0 rounded-sm p-xs text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-body-md text-on-surface-variant italic">
-                      No attachments added yet.
-                    </p>
-                  )}
-                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-sm border-t border-outline-variant bg-surface-container-low/50 px-lg py-md">
+              <div className="flex items-center justify-end gap-sm border-t border-outline-variant bg-surface-container-low px-md py-sm">
                 <button
                   type="button"
                   disabled={savingEdit}
                   onClick={() => setEditModalOpen(false)}
-                  className="rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-label-md font-semibold text-on-surface hover:bg-surface-container"
+                  className="rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingEdit}
-                  className="rounded-md bg-primary px-lg py-sm text-label-md font-semibold text-on-primary shadow-raised hover:bg-primary-container disabled:opacity-60"
+                  className="rounded-md bg-primary px-lg py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
                 >
                   {savingEdit ? 'Saving…' : 'Save Changes'}
                 </button>
@@ -1451,6 +1793,11 @@ function IssueDetail() {
         variant={confirmModal.variant}
         icon={confirmModal.icon}
         isLoading={confirmModal.isLoading}
+      />
+
+      <ImagePreviewModal
+        image={previewImage}
+        onClose={() => setPreviewImage(null)}
       />
     </div>
   )

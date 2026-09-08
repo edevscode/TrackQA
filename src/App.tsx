@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './routes/ProtectedRoute'
 import PublicOnlyRoute from './routes/PublicOnlyRoute'
 import RequireProject from './routes/RequireProject'
@@ -20,6 +20,8 @@ import Notifications from './pages/Notifications'
 import ProjectSettings from './pages/ProjectSettings'
 import AccountSettings from './pages/AccountSettings'
 import ArchivedProjects from './pages/ArchivedProjects'
+import Support from './pages/Support'
+import Landing from './pages/Landing'
 import NotFound from './pages/NotFound'
 
 function App() {
@@ -52,10 +54,11 @@ function App() {
           <Route path="/members" element={<Members />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/project-settings" element={<ProjectSettings />} />
+          <Route path="/support" element={<Support />} />
         </Route>
       </Route>
 
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<Landing />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

@@ -1,10 +1,7 @@
 import {
-  Archive,
   ArchiveRestore,
   ArrowLeft,
-  Bug,
   Calendar,
-  ChevronRight,
   LogOut,
   RotateCw,
   Trash2,
@@ -151,123 +148,100 @@ function ArchivedProjects() {
           return
         }
 
-        setActionSuccess(`Project "${project.name}" was permanently deleted.`)
+        setActionSuccess(`Project "${project.name}" deleted.`)
         await refreshProjects()
         loadArchivedProjects()
       },
     })
   }
 
-  const handleSignOut = () => {
-    setConfirmModal({
-      open: true,
-      title: 'Sign Out',
-      description: 'Are you sure you want to sign out of your TrackQA account?',
-      confirmLabel: 'Sign Out',
-      variant: 'primary',
-      icon: <LogOut size={22} className="text-primary" />,
-      onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, isLoading: true }))
-        await signOut()
-        navigate('/login')
-      },
-    })
+  const handleSignOut = async () => {
+    await signOut()
+    navigate('/login')
   }
 
   const renderContent = () => (
-    <div className="mx-auto w-full max-w-[1100px] flex-1 px-lg py-lg">
-      <div className="flex flex-col gap-xs sm:flex-row sm:items-center sm:justify-between">
+    <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+      <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-xs text-body-md text-on-surface-variant">
-            {currentProject ? (
-              <Link to="/project-settings" className="hover:text-primary transition-colors">
-                Project Settings
-              </Link>
-            ) : (
-              <Link to="/welcome" className="hover:text-primary transition-colors">
-                Welcome
-              </Link>
-            )}
-            <ChevronRight size={14} />
-            <span className="text-on-surface font-medium">Archived Projects</span>
+          <div className="flex items-center gap-xs">
+            <span className="rounded bg-surface-container-highest px-xs py-0.5 font-mono text-code-xs font-bold text-on-surface tracking-wider">
+              [COLD-STORAGE]
+            </span>
+            <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">
+              Archived Projects
+            </h1>
           </div>
-          <h1 className="mt-xs text-headline-xl font-bold text-on-surface">
-            Archived Projects
-          </h1>
-          <p className="mt-xs text-body-lg text-on-surface-variant">
-            Projects that have been archived. You can restore them anytime to resume work.
+          <p className="mt-xs text-body-md text-on-surface-variant">
+            Read-only project repositories. Restore anytime to resume testing and defect tracking.
           </p>
         </div>
 
-        <div className="mt-md flex items-center gap-sm sm:mt-0">
+        <div>
           <Link
             to={currentProject ? '/dashboard' : '/welcome'}
-            className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-md font-semibold text-on-surface hover:bg-surface-container-low transition-colors"
+            className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
           >
-            <ArrowLeft size={16} />
-            {currentProject ? 'Back to Dashboard' : 'Back to Welcome'}
+            <ArrowLeft size={14} />
+            <span>{currentProject ? 'Return to Dashboard' : 'Return to Welcome'}</span>
           </Link>
         </div>
       </div>
 
-      <div className="mt-lg mb-lg border-t border-outline-variant" />
-
       {actionError && (
-        <div className="mb-md rounded-md bg-error-container p-md text-body-md text-on-error-container">
+        <div className="mb-md rounded border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">
           {actionError}
         </div>
       )}
 
       {actionSuccess && (
-        <div className="mb-md rounded-md bg-emerald-50 p-md text-body-md text-emerald-800">
+        <div className="mb-md rounded border border-emerald-500/30 bg-emerald-500/10 p-sm text-body-md text-emerald-800 dark:text-emerald-300">
           {actionSuccess}
         </div>
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-xl text-body-lg text-on-surface-variant">
-          <RotateCw className="animate-spin mr-sm" size={20} />
-          Loading archived projects…
+        <div className="flex items-center justify-center py-xl text-body-md text-on-surface-variant font-mono">
+          <RotateCw className="animate-spin mr-xs" size={16} />
+          Loading archived records…
         </div>
       ) : archivedList.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-outline-variant bg-surface-container-lowest px-lg py-xl text-center">
-          <div className="mb-md flex h-12 w-12 items-center justify-center rounded-full bg-surface-container">
-            <Archive className="text-on-surface-variant" size={22} />
-          </div>
-          <h2 className="text-headline-md font-semibold text-on-surface">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center">
+          <p className="text-headline-md font-semibold text-on-surface">
             No Archived Projects
-          </h2>
+          </p>
           <p className="mt-xs max-w-[420px] text-body-md text-on-surface-variant">
-            You do not have any archived projects. Projects archived from settings will appear here.
+            Projects archived from Project Settings will appear here in cold storage.
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-md">
+        <div className="flex flex-col gap-sm">
           {archivedList.map((project) => {
             const isOwner = user?.id ? project.owner_id === user.id : false
             const isRestoring = restoringId === project.id
             const isDeleting = deletingId === project.id
+            const projectAnchor = `[${project.key}]`
 
             return (
               <div
                 key={project.id}
-                className="flex flex-col justify-between gap-md rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-xs transition-all sm:flex-row sm:items-center"
+                className="flex flex-col justify-between gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-outline transition-colors sm:flex-row sm:items-center"
               >
                 <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-sm">
-                    <span className="font-mono text-code-sm font-bold text-on-surface-variant">
-                      {project.key}
+                  <div className="flex flex-wrap items-center gap-xs">
+                    <span className="font-mono text-code-xs font-bold text-on-surface">
+                      {projectAnchor}
                     </span>
-                    <h2 className="text-headline-md font-semibold text-on-surface">
+                    <h2 className="text-body-lg font-bold text-on-surface">
                       {project.name}
                     </h2>
                     {isOwner && (
-                      <span className="rounded bg-primary-fixed px-xs py-0.5 text-[10px] font-bold uppercase tracking-wider text-on-primary-fixed">
-                        My Project
+                      <span className="rounded border border-primary/30 bg-primary-fixed/40 px-xs py-0.2 font-mono text-code-xs font-semibold uppercase text-primary">
+                        OWNER
                       </span>
                     )}
-                    <span className="rounded bg-surface-container px-sm py-[2px] text-label-md font-semibold text-on-surface-variant">
-                      Archived
+                    <span className="rounded border border-outline-variant bg-surface-container-low px-xs py-0.2 font-mono text-code-xs uppercase text-on-surface-variant">
+                      ARCHIVED
                     </span>
                   </div>
 
@@ -277,27 +251,27 @@ function ArchivedProjects() {
                     </p>
                   )}
 
-                  <div className="mt-sm flex flex-wrap items-center gap-md text-body-md text-on-surface-variant">
-                    <span className="flex items-center gap-xs">
-                      <Calendar size={14} />
+                  <div className="mt-xs flex flex-wrap items-center gap-sm font-mono text-code-xs text-outline">
+                    <span className="flex items-center gap-1">
+                      <Calendar size={12} />
                       {project.archived_at
-                        ? `Archived on ${formatDate(project.archived_at)}`
-                        : 'Archived'}
+                        ? `ARCHIVED ${formatDate(project.archived_at)}`
+                        : 'ARCHIVED'}
                     </span>
-                    <span>•</span>
-                    <span>{project.member_count ?? 1} team member(s)</span>
+                    <span>·</span>
+                    <span>{project.member_count ?? 1} OPERATOR(S)</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-sm pt-sm border-t border-outline-variant/60 sm:border-0 sm:pt-0">
+                <div className="flex items-center gap-xs pt-xs border-t border-outline-variant sm:border-0 sm:pt-0">
                   <button
                     type="button"
                     disabled={isRestoring || isDeleting}
                     onClick={() => handleRestore(project)}
-                    className="flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary shadow-raised hover:bg-primary-container disabled:opacity-60 transition-colors"
+                    className="inline-flex items-center gap-xs rounded bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
                   >
-                    <ArchiveRestore size={16} />
-                    {isRestoring ? 'Restoring…' : 'Restore Project'}
+                    <ArchiveRestore size={14} />
+                    <span>{isRestoring ? 'Restoring…' : 'Restore Project'}</span>
                   </button>
 
                   {isOwner && (
@@ -305,10 +279,10 @@ function ArchivedProjects() {
                       type="button"
                       disabled={isRestoring || isDeleting}
                       onClick={() => handleDelete(project)}
-                      className="flex items-center gap-xs rounded-md border border-outline-variant px-md py-sm text-body-md font-semibold text-rose-600 hover:bg-rose-50 hover:border-rose-300 disabled:opacity-60 transition-colors"
+                      className="inline-flex items-center gap-xs rounded border border-outline-variant bg-surface-container-lowest px-md py-xs text-label-md font-semibold text-error hover:bg-rose-500/10 hover:border-rose-500/30 transition-colors disabled:opacity-50"
                     >
-                      <Trash2 size={16} />
-                      {isDeleting ? 'Deleting…' : 'Delete'}
+                      <Trash2 size={14} />
+                      <span>{isDeleting ? 'Deleting…' : 'Delete'}</span>
                     </button>
                   )}
                 </div>
@@ -317,7 +291,7 @@ function ArchivedProjects() {
           })}
         </div>
       )}
-    </div>
+    </main>
   )
 
   return (
@@ -325,44 +299,44 @@ function ArchivedProjects() {
       {currentProject ? (
         <div className="flex min-h-screen bg-surface">
           <Sidebar />
-          <div className="flex flex-1 flex-col">
+          <div className="flex flex-1 flex-col min-w-0">
             <TopBar />
             {renderContent()}
           </div>
         </div>
       ) : (
         <div className="flex min-h-screen flex-col bg-surface">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-outline-variant bg-surface-container-lowest px-lg">
-            <div className="flex items-center gap-sm">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
-                <Bug className="text-on-primary" size={18} />
-              </div>
-              <span className="text-headline-md font-bold text-primary">TrackQA</span>
+          <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-outline-variant bg-surface-container-lowest px-md">
+            <div className="flex items-center gap-xs">
+              <span className="rounded bg-primary-fixed px-xs py-0.5 font-mono text-code-xs font-bold text-on-primary-fixed tracking-wider">
+                [QA-ARCHIVE]
+              </span>
+              <span className="text-headline-md font-bold tracking-tight text-on-surface">TrackQA</span>
             </div>
 
-            <div className="flex items-center gap-md">
+            <div className="flex items-center gap-sm">
               <Link
                 to="/welcome"
                 className="text-body-md font-semibold text-on-surface-variant hover:text-primary transition-colors"
               >
-                Welcome Hub
+                Welcome
               </Link>
               <Link
                 to="/account-settings"
                 className="text-body-md font-semibold text-on-surface-variant hover:text-primary transition-colors"
               >
-                Account Settings
+                Account
               </Link>
-              <div className="h-6 w-px bg-outline-variant" />
-              <div className="flex items-center gap-sm">
-                <Avatar name={profile?.full_name} avatarUrl={profile?.avatar_url} size={36} />
+              <div className="h-4 w-px bg-outline-variant" />
+              <div className="flex items-center gap-xs">
+                <Avatar name={profile?.full_name} avatarUrl={profile?.avatar_url} size={28} />
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  className="flex items-center gap-xs rounded-md border border-outline-variant px-sm py-xs text-body-md font-medium text-on-surface hover:bg-surface-container-low"
+                  className="inline-flex items-center gap-xs rounded border border-outline-variant px-xs py-1 text-label-md font-semibold text-on-surface hover:bg-surface-container"
                 >
-                  <LogOut size={14} />
-                  Sign Out
+                  <LogOut size={12} />
+                  <span>Sign Out</span>
                 </button>
               </div>
             </div>
