@@ -586,7 +586,7 @@ function MyTasks() {
               <p className="text-headline-md font-semibold text-on-surface">
                 {hasActiveFilters ? 'No matching queue items' : 'Queue is clear'}
               </p>
-              <p className="text-body-md text-on-surface-variant w-full max-w-md">
+              <p className="w-full max-w-[28rem] text-body-md text-on-surface-variant">
                 {hasActiveFilters
                   ? 'No tasks matched your current search and filter criteria.'
                   : tab === 'assigned'

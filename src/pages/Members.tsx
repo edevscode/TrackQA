@@ -366,6 +366,7 @@ function Members() {
                 <button
                   type="button"
                   onClick={handleCopyCode}
+                  title={copiedCode ? 'Copied' : 'Copy access code'}
                   aria-label={copiedCode ? 'Copied' : 'Copy access code'}
                   className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-container transition-colors text-on-surface-variant hover:text-on-surface"
                 >

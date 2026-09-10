@@ -324,6 +324,7 @@ function Notifications() {
               <button
                 type="button"
                 onClick={() => setActiveThreadKey(null)}
+                title="Back to Notifications"
                 aria-label="Back to Notifications"
                 className="flex w-fit items-center gap-xs font-mono text-code-xs font-semibold text-on-surface-variant hover:text-primary transition-colors"
               >
@@ -471,7 +472,7 @@ function Notifications() {
                     <p className="text-headline-md font-semibold text-on-surface">
                       {filterUnreadOnly ? 'No unread notifications' : 'No notifications yet'}
                     </p>
-                    <p className="mt-xs text-body-md text-on-surface-variant max-w-md">
+                    <p className="mt-xs w-full max-w-[28rem] text-body-md text-on-surface-variant">
                       {filterUnreadOnly
                         ? 'All notifications have been reviewed.'
                         : 'Verification outcomes, assignment changes, and comments will appear here.'}

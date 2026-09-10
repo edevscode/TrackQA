@@ -69,6 +69,7 @@ function Sidebar() {
           <button
             type="button"
             onClick={() => setMobileOpen(false)}
+            title="Close menu"
             aria-label="Close menu"
             className="rounded-md p-xs text-on-surface-variant hover:bg-surface-container-low lg:hidden"
           >

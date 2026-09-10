@@ -359,6 +359,7 @@ function TopBar() {
                   searchInputRef.current?.focus()
                 }}
                 className="rounded-md p-1 text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors shrink-0"
+                title="Clear search"
                 aria-label="Clear search"
               >
                 <X size={15} />
@@ -557,6 +558,7 @@ function TopBar() {
         {/* Notifications Button */}
         <button
           type="button"
+          title="Notifications"
           aria-label="Notifications"
           onClick={() => navigate('/notifications')}
           className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low"
@@ -669,6 +671,7 @@ function TopBar() {
         <button
           type="button"
           onClick={() => navigate('/account-settings')}
+          title="Account settings"
           aria-label="Account settings"
           className="rounded-full"
         >

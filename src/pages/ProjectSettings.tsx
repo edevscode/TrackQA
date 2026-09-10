@@ -455,6 +455,7 @@ function ProjectSettings() {
                           <button
                             type="button"
                             onClick={handleCopyCode}
+                            title={copiedCode ? 'Copied' : 'Copy access code'}
                             aria-label={copiedCode ? 'Copied' : 'Copy access code'}
                             className="flex h-6 w-6 items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container transition-colors"
                           >
@@ -585,6 +586,7 @@ function ProjectSettings() {
                           {isOwner && member.user_id !== user?.id && (
                             <button
                               type="button"
+                              title={`Remove ${member.full_name ?? member.email}`}
                               aria-label={`Remove ${member.full_name ?? member.email}`}
                               onClick={() =>
                                 handleRemoveMember(

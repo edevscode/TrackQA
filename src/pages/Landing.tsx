@@ -161,6 +161,7 @@ function Landing() {
             type="button"
             onClick={() => setMobileMenuOpen((open) => !open)}
             className="rounded-md p-2 text-on-surface hover:bg-surface-container transition-colors md:hidden"
+            title="Toggle navigation menu"
             aria-label="Toggle navigation menu"
           >
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}

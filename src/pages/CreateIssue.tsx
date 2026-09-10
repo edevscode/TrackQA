@@ -395,6 +395,7 @@ function CreateIssue() {
                           </div>
                           <button
                             type="button"
+                            title="Remove file"
                             aria-label="Remove file"
                             onClick={() => removePendingFile(i)}
                             className="shrink-0 rounded p-xs text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-colors"

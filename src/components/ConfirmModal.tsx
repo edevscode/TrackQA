@@ -74,6 +74,7 @@ export default function ConfirmModal({
             type="button"
             disabled={isLoading}
             onClick={onClose}
+            title="Close dialog"
             aria-label="Close dialog"
             className="rounded p-xs text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface disabled:opacity-50 transition-colors -mr-xs -mt-xs"
           >
