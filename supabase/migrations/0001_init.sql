@@ -466,8 +466,8 @@ $$;
 --
 --   OPEN -> IN_PROGRESS         (OWNER, or DEVELOPER if they're the assignee)
 --   IN_PROGRESS -> FOR_TESTING  (OWNER, or DEVELOPER if they're the assignee)
---   FOR_TESTING -> PASSED       (OWNER or QA)
---   FOR_TESTING -> FAILED       (OWNER or QA)
+--   FOR_TESTING -> PASSED       (reporter only)
+--   FOR_TESTING -> FAILED       (reporter only)
 --   FAILED -> IN_PROGRESS       (OWNER, or DEVELOPER if they're the assignee)
 --   PASSED -> DONE              (OWNER only)
 --
@@ -495,8 +495,8 @@ begin
   v_role := public.get_project_role(new.project_id, auth.uid());
 
   if new.priority is distinct from old.priority or new.assignee_id is distinct from old.assignee_id then
-    if v_role is distinct from 'OWNER'::project_role then
-      raise exception 'Only the project owner can change priority or reassign this issue';
+    if v_role is distinct from 'OWNER'::project_role and old.reporter_id is distinct from auth.uid() then
+      raise exception 'Only the project owner or the issue creator can change priority or reassign this issue';
     end if;
   end if;
 
@@ -509,35 +509,29 @@ begin
   end if;
 
   if old.status = 'OPEN' and new.status = 'IN_PROGRESS' then
-    if v_role = 'OWNER' then
-      null;
-    elsif v_role = 'DEVELOPER' and new.assignee_id = (select auth.uid()) then
+    if new.assignee_id = (select auth.uid()) and v_role in ('DEVELOPER', 'OWNER') then
       null;
     else
-      raise exception 'Only the project owner or the assigned developer can start work on this issue';
+      raise exception 'Only the assigned developer can start work on this issue';
     end if;
 
   elsif old.status = 'IN_PROGRESS' and new.status = 'FOR_TESTING' then
-    if v_role = 'OWNER' then
-      null;
-    elsif v_role = 'DEVELOPER' and new.assignee_id = (select auth.uid()) then
+    if new.assignee_id = (select auth.uid()) and v_role in ('DEVELOPER', 'OWNER') then
       null;
     else
-      raise exception 'Only the project owner or the assigned developer can submit this issue for testing';
+      raise exception 'Only the assigned developer can submit this issue for testing';
     end if;
 
   elsif old.status = 'FOR_TESTING' and new.status in ('PASSED', 'FAILED') then
-    if v_role not in ('OWNER', 'QA') then
-      raise exception 'Only an OWNER or QA member can record a QA result';
+    if old.reporter_id is distinct from auth.uid() then
+      raise exception 'Only the issue reporter can record a QA result';
     end if;
 
   elsif old.status = 'FAILED' and new.status = 'IN_PROGRESS' then
-    if v_role = 'OWNER' then
-      null;
-    elsif v_role = 'DEVELOPER' and new.assignee_id = (select auth.uid()) then
+    if new.assignee_id = (select auth.uid()) and v_role in ('DEVELOPER', 'OWNER') then
       null;
     else
-      raise exception 'Only the project owner or the assigned developer can resume work on this issue';
+      raise exception 'Only the assigned developer can resume work on this issue';
     end if;
 
   elsif old.status = 'PASSED' and new.status = 'DONE' then
@@ -1163,8 +1157,10 @@ using (
   )
 );
 
+-- QA verification is reserved for the issue's reporter alone.
 drop policy if exists "qa_verifications_insert_qa_or_owner" on public.qa_verifications;
-create policy "qa_verifications_insert_qa_or_owner"
+drop policy if exists "qa_verifications_insert_reporter_only" on public.qa_verifications;
+create policy "qa_verifications_insert_reporter_only"
 on public.qa_verifications for insert
 to authenticated
 with check (
@@ -1172,7 +1168,7 @@ with check (
   and exists (
     select 1 from public.issues i
     where i.id = qa_verifications.issue_id
-      and public.get_project_role(i.project_id) in ('QA', 'OWNER')
+      and i.reporter_id = (select auth.uid())
   )
 );
 

@@ -274,6 +274,8 @@ function Issues() {
                       setSearch('')
                       setPage(1)
                     }}
+                    title="Clear search"
+                    aria-label="Clear search"
                     className="text-outline hover:text-on-surface"
                   >
                     <X size={14} />
@@ -563,6 +565,8 @@ function Issues() {
                     type="button"
                     disabled={page <= 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    title="Previous page"
+                    aria-label="Previous page"
                     className="flex h-8 w-8 items-center justify-center rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
                   >
                     <ChevronLeft size={16} />
@@ -589,6 +593,8 @@ function Issues() {
                     type="button"
                     disabled={page >= totalPages}
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    title="Next page"
+                    aria-label="Next page"
                     className="flex h-8 w-8 items-center justify-center rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
                   >
                     <ChevronRight size={16} />

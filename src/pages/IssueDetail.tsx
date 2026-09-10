@@ -623,9 +623,12 @@ function IssueDetail() {
   const assigneeMember = members.find((m) => m.user_id === issue.assignee_id)
   const isAssignee = issue.assignee_id === user?.id
   const canDev = isAssignee && (isOwner || myRole === 'DEVELOPER')
-  const canQa = isOwner || myRole === 'QA'
   const isDone = issue.status === 'DONE'
   const isReporter = issue.reporter_id === user?.id
+  // QA verification is reserved for the reporter alone — not the owner, not
+  // QA-role members, no one else. Only the person who filed the report can
+  // record a pass/fail result on it.
+  const canQa = isReporter
   const canManageIssue = !isDone && (isOwner || isReporter)
   const canDeleteIssue = isReporter || isOwner
   const canInteract =
@@ -901,7 +904,7 @@ function IssueDetail() {
                     <div className="flex items-center gap-sm text-body-md text-on-surface-variant">
                       <Clock size={18} className="text-amber-600 shrink-0" />
                       <span>
-                        This ticket is submitted for QA verification. A QA member or the project owner must verify and record pass/fail results.
+                        This ticket is submitted for QA verification. Only the reporter who filed this issue can verify and record pass/fail results.
                       </span>
                     </div>
                   )}
@@ -1613,6 +1616,8 @@ function IssueDetail() {
                 type="button"
                 disabled={savingEdit}
                 onClick={() => setEditModalOpen(false)}
+                title="Close"
+                aria-label="Close edit issue dialog"
                 className="rounded p-xs text-outline hover:bg-surface-container hover:text-on-surface transition-colors"
               >
                 <X size={16} />

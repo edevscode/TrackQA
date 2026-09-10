@@ -325,6 +325,8 @@ function MyTasks() {
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
+                    title="Clear search"
+                    aria-label="Clear search"
                     className="text-outline hover:text-on-surface"
                   >
                     <X size={14} />
@@ -496,6 +498,8 @@ function MyTasks() {
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
+                    title="Remove search filter"
+                    aria-label="Remove search filter"
                     className="text-outline hover:text-on-surface"
                   >
                     <X size={12} />
@@ -508,6 +512,8 @@ function MyTasks() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter('')}
+                    title="Remove status filter"
+                    aria-label="Remove status filter"
                     className="text-outline hover:text-on-surface"
                   >
                     <X size={12} />
@@ -520,6 +526,8 @@ function MyTasks() {
                   <button
                     type="button"
                     onClick={() => setPriorityFilter('')}
+                    title="Remove priority filter"
+                    aria-label="Remove priority filter"
                     className="text-outline hover:text-on-surface"
                   >
                     <X size={12} />
@@ -578,7 +586,7 @@ function MyTasks() {
               <p className="text-headline-md font-semibold text-on-surface">
                 {hasActiveFilters ? 'No matching queue items' : 'Queue is clear'}
               </p>
-              <p className="text-body-md text-on-surface-variant max-w-md">
+              <p className="text-body-md text-on-surface-variant w-full max-w-md">
                 {hasActiveFilters
                   ? 'No tasks matched your current search and filter criteria.'
                   : tab === 'assigned'
