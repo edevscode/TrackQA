@@ -1012,10 +1012,10 @@ function IssueDetail() {
                       </h3>
                     </div>
                     <p className="mt-xs text-body-md text-emerald-900 dark:text-emerald-200">
-                      All test criteria verified successfully. Ready for final closure by project owner.
+                      All test criteria verified successfully. Ready for final closure by the reporter or the project owner.
                     </p>
                   </div>
-                  {isOwner && (
+                  {(isOwner || isReporter) && (
                     <button
                       type="button"
                       disabled={transitioning}

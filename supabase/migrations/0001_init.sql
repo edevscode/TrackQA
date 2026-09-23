@@ -469,7 +469,7 @@ $$;
 --   FOR_TESTING -> PASSED       (reporter only)
 --   FOR_TESTING -> FAILED       (reporter only)
 --   FAILED -> IN_PROGRESS       (OWNER, or DEVELOPER if they're the assignee)
---   PASSED -> DONE              (OWNER only)
+--   PASSED -> DONE              (OWNER or reporter)
 --
 -- Once an issue is DONE it is fully frozen: no further updates of any kind
 -- (status, priority, assignee, or otherwise) are accepted, for any role.
@@ -535,8 +535,8 @@ begin
     end if;
 
   elsif old.status = 'PASSED' and new.status = 'DONE' then
-    if v_role is distinct from 'OWNER'::project_role then
-      raise exception 'Only the project owner can close a passed issue';
+    if v_role is distinct from 'OWNER'::project_role and old.reporter_id is distinct from auth.uid() then
+      raise exception 'Only the project owner or the issue reporter can close a passed issue';
     end if;
 
   else
