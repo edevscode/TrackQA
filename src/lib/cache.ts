@@ -10,7 +10,7 @@ import type {
   ProjectRole,
   IssueDeadlines,
 } from './database.types'
-import type { DeadlineFilter } from './deadlines'
+import type { DeadlineFilter, DeadlineSort } from './deadlines'
 
 import { MemoryCache } from './memoryCache'
 
@@ -133,7 +133,7 @@ export async function fetchDashboardData(
 
 export type IssueListItem = Pick<
   Issue,
-  'id' | 'issue_number' | 'title' | 'priority' | 'status' | 'created_at' | 'reporter_id' | 'assignee_id'
+  'id' | 'issue_number' | 'title' | 'priority' | 'status' | 'created_at' | 'updated_at' | 'reporter_id' | 'assignee_id'
 > & IssueDeadlines & {
   assignee: { full_name: string | null; avatar_url: string | null } | null
   reporter: { full_name: string | null } | null
@@ -147,7 +147,7 @@ export type IssueQueryParams = {
   assigneeFilter?: string
   search?: string
   deadlineFilter?: DeadlineFilter
-  sortBy?: 'newest' | 'deadline'
+  sortBy?: DeadlineSort
 }
 
 export type IssuesResponse = {
@@ -170,7 +170,7 @@ export async function fetchIssuesData(
     assigneeFilter: params.assigneeFilter || '',
     search: params.search?.trim() || '',
     deadlineFilter: params.deadlineFilter || '',
-    sortBy: params.sortBy || 'newest',
+    sortBy: params.sortBy || (params.deadlineFilter === 'upcoming' ? 'next' : 'newest'),
   }
 
   const scopeVersion = queryCache.scopeVersion
@@ -203,7 +203,9 @@ export async function fetchIssuesData(
   }
   if (normalizedParams.deadlineFilter === 'overdue') query = query.eq('is_overdue', true)
   if (normalizedParams.deadlineFilter === 'missed') query = query.eq('has_missed_target', true).neq('status', 'DONE')
+  if (normalizedParams.deadlineFilter === 'upcoming') query = query.eq('is_due_soon', true)
   if (normalizedParams.sortBy === 'deadline') query = query.order('resolution_sort_date', { ascending: true, nullsFirst: false })
+  if (normalizedParams.sortBy === 'next') query = query.order('next_deadline_at', { ascending: true, nullsFirst: false })
 
   const { data, count, error } = await query
     .order('issue_number', { ascending: false })

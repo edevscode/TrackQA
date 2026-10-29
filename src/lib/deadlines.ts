@@ -7,7 +7,9 @@ export const timeKeys = { start_by: 'start_time', ready_for_qa_by: 'ready_for_qa
 export const cutoffKeys = { start_by: 'start_cutoff_at', ready_for_qa_by: 'ready_for_qa_cutoff_at', qa_decision_by: 'qa_decision_cutoff_at', resolve_by: 'resolve_cutoff_at' } as const
 export const timezoneKeys = { start_by: 'start_timezone', ready_for_qa_by: 'ready_for_qa_timezone', qa_decision_by: 'qa_decision_timezone', resolve_by: 'resolve_timezone' } as const
 export type DeadlineInput = Record<DeadlineKey | typeof timeKeys[DeadlineKey], string> & { entry_timezone: string; deadline_mode: DeadlineMode; end_of_day: Record<DeadlineKey, boolean> }
-export type DeadlineFilter = '' | 'overdue' | 'missed'
+export type DeadlineFilter = '' | 'overdue' | 'missed' | 'upcoming'
+export type DeadlineSort = 'newest' | 'deadline' | 'next'
+export const dueSoonWindowMs = 7 * 24 * 60 * 60 * 1000
 export const emptyDeadlines: DeadlineInput = { entry_timezone: '', deadline_mode: 'none', end_of_day: { start_by: true, ready_for_qa_by: true, qa_decision_by: true, resolve_by: true }, resolve_by: '', start_by: '', ready_for_qa_by: '', qa_decision_by: '', resolve_time: '', start_time: '', ready_for_qa_time: '', qa_decision_time: '' }
 export const deadlineLabels: Record<DeadlineKey, string> = { resolve_by: 'Resolve by', start_by: 'Start work by', ready_for_qa_by: 'Ready for QA by', qa_decision_by: 'QA decision by' }
 export const modeLabels = { none: 'No deadline', single: 'Single deadline', stages: 'Stage deadlines' }
@@ -163,18 +165,29 @@ export function deadlineState(issue: IssueDeadlines & { status: IssueStatus }, n
     const unknown = alreadyReached && !actual
     const cutoff = deadlineCutoff(issue, key)
     const late = cutoff !== null && !unknown && cutoff < (actual ? Date.parse(actual) : now.getTime())
-    return { key, target, time: issue[timeKeys[key]], actual, late, unknown }
+    return { key, target, time: issue[timeKeys[key]], actual, late, unknown, cutoff }
   })
   const resolution = deadlineCutoff(issue, 'resolve_by')
+  const pending = issue.status === 'DONE' ? undefined : targets.find((target) => target.cutoff !== null && !target.actual && !target.unknown)
+  const nextCutoff = pending?.cutoff ?? null
   return {
     targets,
     overdue: issue.status !== 'DONE' && resolution !== null && resolution < now.getTime(),
     missedStage: mode === 'stages' && targets.some((target) => target.key !== 'resolve_by' && target.late),
     completedLate: issue.status === 'DONE' && targets.some((target) => target.key === 'resolve_by' && target.late),
+    nextKey: pending?.key ?? null,
+    nextCutoff,
+    dueSoon: nextCutoff !== null && nextCutoff >= now.getTime() && nextCutoff <= now.getTime() + dueSoonWindowMs,
   }
 }
 export function compareResolutionDates(a: DeadlineSource & { deadline_timezone: string; status?: IssueStatus }, b: DeadlineSource & { deadline_timezone: string; status?: IssueStatus }) {
   const cutoff = (issue: typeof a) => issue.status === 'DONE' ? Infinity : deadlineCutoff(issue, 'resolve_by') ?? Infinity
   const first = cutoff(a), second = cutoff(b)
+  return first === second ? 0 : first < second ? -1 : 1
+}
+
+export function comparePendingDeadlines(a: IssueDeadlines & { status: IssueStatus }, b: IssueDeadlines & { status: IssueStatus }) {
+  const first = deadlineState(a).nextCutoff ?? Infinity
+  const second = deadlineState(b).nextCutoff ?? Infinity
   return first === second ? 0 : first < second ? -1 : 1
 }

@@ -1,7 +1,7 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineFilters from '../components/DeadlineFilters'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
-import type { DeadlineFilter } from '../lib/deadlines'
+import type { DeadlineFilter, DeadlineSort } from '../lib/deadlines'
 import LoadError from '../components/LoadError'
 import {
   ChevronDown,
@@ -106,8 +106,11 @@ function Issues() {
   const previousMinute = useRef(minute)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedDeadline = searchParams.get('deadline')
-  const deadlineFilter: DeadlineFilter = requestedDeadline === 'overdue' || requestedDeadline === 'missed' ? requestedDeadline : ''
-  const [sortBy, setSortBy] = useState<'newest' | 'deadline'>('newest')
+  const deadlineFilter: DeadlineFilter = requestedDeadline === 'overdue' || requestedDeadline === 'missed' || requestedDeadline === 'upcoming' ? requestedDeadline : ''
+  const requestedSort = searchParams.get('order')
+  const sortBy: DeadlineSort = requestedSort === 'newest' || requestedSort === 'deadline' || requestedSort === 'next'
+    ? requestedSort : deadlineFilter === 'upcoming' ? 'next' : 'newest'
+
 
 
   const [issues, setIssues] = useState<IssueRow[]>([])
@@ -121,10 +124,17 @@ function Issues() {
   const [statusFilter, setStatusFilter] = useState<IssueStatus | ''>('')
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority | ''>('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
+  const setSortBy = (value: DeadlineSort) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('order', value)
+    setSearchParams(params)
+    setPage(1)
+  }
   const setDeadlineFilter = (value: DeadlineFilter) => {
     const params = new URLSearchParams(searchParams)
     if (value) params.set('deadline', value)
     else params.delete('deadline')
+    if (value === 'upcoming') params.set('order', 'next')
     setSearchParams(params)
     setPage(1)
   }
@@ -495,12 +505,12 @@ function Issues() {
                     <thead>
                       <tr className="border-b border-outline-variant bg-surface-container-low text-label-md font-semibold uppercase tracking-wider text-on-surface-variant">
                         <th className="px-lg py-sm">ID</th>
-                        <th className="px-lg py-sm">Summary</th>
-                        <th className="px-lg py-sm">Deadline</th>
                         <th className="px-lg py-sm">Status</th>
                         <th className="px-lg py-sm">Priority</th>
+                        <th className="px-lg py-sm">Summary</th>
                         <th className="px-lg py-sm">Assignee</th>
                         <th className="px-lg py-sm">Reporter</th>
+                        <th className="px-lg py-sm">Deadline</th>
                         <th className="px-lg py-sm text-right">Updated</th>
                       </tr>
                     </thead>
@@ -530,18 +540,6 @@ function Issues() {
                                 {currentProject?.key}-{issue.issue_number}
                               </span>
                             </td>
-                            <td className="min-w-[210px] px-lg py-md"><DeadlineSummary issue={issue} compact /></td>
-                            <td className="max-w-[340px] px-lg py-md">
-                              <span
-                                className={`block truncate text-body-md font-medium ${
-                                  resolved
-                                    ? 'text-on-surface-variant line-through'
-                                    : 'text-on-surface group-hover:text-primary'
-                                } transition-colors`}
-                              >
-                                {issue.title}
-                              </span>
-                            </td>
                             <td className="whitespace-nowrap px-lg py-md">
                               <span
                                 className={`inline-flex items-center gap-xs rounded-full px-sm py-[2px] text-label-md ${status.badge}`}
@@ -556,6 +554,17 @@ function Issues() {
                               >
                                 <PriorityIcon size={16} />
                                 {priority.label}
+                              </span>
+                            </td>
+                            <td className="max-w-[340px] px-lg py-md">
+                              <span
+                                className={`block truncate text-body-md font-medium ${
+                                  resolved
+                                    ? 'text-on-surface-variant line-through'
+                                    : 'text-on-surface group-hover:text-primary'
+                                } transition-colors`}
+                              >
+                                {issue.title}
                               </span>
                             </td>
                             <td className="whitespace-nowrap px-lg py-md">
@@ -574,8 +583,9 @@ function Issues() {
                             <td className="whitespace-nowrap px-lg py-md text-body-md text-on-surface-variant">
                               {issue.reporter?.full_name ?? '—'}
                             </td>
+                            <td className="min-w-[210px] px-lg py-md"><DeadlineSummary issue={issue} compact /></td>
                             <td className="whitespace-nowrap px-lg py-md text-right text-body-md text-on-surface-variant">
-                              {timeAgo(issue.created_at)}
+                              {timeAgo(issue.updated_at)}
                             </td>
                           </tr>
                         )

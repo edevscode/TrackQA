@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { deadlineInput, deadlinePayload, deadlineMode, emptyDeadlines, validateDeadlines, deadlineState, dateInTimezone, compareResolutionDates, localDeadlineInstant, removedDeadlineTargets, formatDeadline, displayedDeadline, formatSavedDeadline } from '../src/lib/deadlines.ts'
+import { deadlineInput, deadlinePayload, deadlineMode, emptyDeadlines, validateDeadlines, deadlineState, dateInTimezone, compareResolutionDates, comparePendingDeadlines, localDeadlineInstant, removedDeadlineTargets, formatDeadline, displayedDeadline, formatSavedDeadline, dueSoonWindowMs } from '../src/lib/deadlines.ts'
 
 const base = {
   status: 'OPEN', deadline_mode: 'none', resolve_by: null, start_by: null, ready_for_qa_by: null, qa_decision_by: null,
@@ -151,4 +151,37 @@ test('an in-progress draft follows a changed device timezone without reinterpret
   const moved = deadlineInput(first, 'America/New_York')
   assert.equal(moved.entry_timezone, 'America/New_York')
   assert.equal(localDeadlineInstant(moved.resolve_by, moved.resolve_time, moved.entry_timezone), original)
+})
+
+test('due soon uses a rolling seven-day window with exact inclusive boundaries', () => {
+  const now = new Date('2026-10-29T08:00:00Z')
+  const source = { ...base, deadline_mode: 'single', resolve_by: '2026-11-05' }
+  assert.equal(deadlineState({ ...source, resolve_cutoff_at: now.toISOString() }, now).dueSoon, true)
+  assert.equal(deadlineState({ ...source, resolve_cutoff_at: new Date(now.getTime() + dueSoonWindowMs).toISOString() }, now).dueSoon, true)
+  assert.equal(deadlineState({ ...source, resolve_cutoff_at: new Date(now.getTime() + dueSoonWindowMs + 1).toISOString() }, now).dueSoon, false)
+  assert.equal(deadlineState({ ...source, resolve_cutoff_at: new Date(now.getTime() - 1).toISOString() }, now).dueSoon, false)
+  assert.equal(deadlineState({ ...source, status: 'DONE' }, now).dueSoon, false)
+  assert.equal(deadlineState(base, now).dueSoon, false)
+})
+test('stage due-soon selection uses one pending milestone and cannot skip an overdue pending target', () => {
+  const now = new Date('2026-10-29T08:00:00Z')
+  const stage = { ...base, deadline_mode: 'stages', start_by: '2026-10-29', start_cutoff_at: '2026-10-29T07:00:00Z', ready_for_qa_by: '2026-10-30', ready_for_qa_cutoff_at: '2026-10-30T08:00:00Z' }
+  const blocked = deadlineState(stage, now)
+  assert.equal(blocked.nextKey, 'start_by')
+  assert.equal(blocked.dueSoon, false)
+  const started = deadlineState({ ...stage, status: 'IN_PROGRESS', work_started_at: now.toISOString() }, now)
+  assert.equal(started.nextKey, 'ready_for_qa_by')
+  assert.equal(started.dueSoon, true)
+  assert.equal(started.missedStage, true)
+})
+test('partial stage plans and legacy reached milestones select the next measured commitment', () => {
+  const now = new Date('2026-10-29T08:00:00Z')
+  const stage = { ...base, deadline_mode: 'stages', status: 'FOR_TESTING', start_by: '2026-10-28', start_cutoff_at: '2026-10-28T08:00:00Z', qa_decision_by: '2026-10-30', qa_decision_cutoff_at: '2026-10-30T08:00:00Z' }
+  assert.equal(deadlineState(stage, now).nextKey, 'qa_decision_by')
+  assert.equal(deadlineState(stage, now).dueSoon, true)
+  assert.equal(deadlineState({ ...stage, status: 'PASSED', qa_decided_at: now.toISOString() }, now).dueSoon, false)
+  const near = { ...base, deadline_mode: 'single', resolve_by: '2026-10-30', resolve_cutoff_at: '2026-10-30T08:00:00Z' }
+  const later = { ...near, resolve_by: '2026-11-01', resolve_cutoff_at: '2026-11-01T08:00:00Z' }
+  assert.ok(comparePendingDeadlines(near, later) < 0)
+  assert.ok(comparePendingDeadlines(near, { ...near, status: 'DONE' }) < 0)
 })

@@ -206,6 +206,7 @@ export type NotificationPreferences = {
 }
 
 export type ProjectDashboardStats = {
+  due_soon_issues: number
   overdue_issues: number
   missed_target_issues: number
   project_id: string
@@ -482,7 +483,7 @@ export type Database = {
     }
     Views: {
       v_issue_deadlines: {
-        Row: Issue & { is_overdue: boolean; has_missed_target: boolean; completed_late: boolean | null; resolution_sort_date: string | null }
+        Row: Issue & { is_overdue: boolean; has_missed_target: boolean; completed_late: boolean | null; resolution_sort_date: string | null; next_deadline_at: string | null; is_due_soon: boolean }
         Relationships: Database['public']['Tables']['issues']['Relationships']
       }
       v_project_dashboard_stats: { Row: ProjectDashboardStats; Relationships: [] }

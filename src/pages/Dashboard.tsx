@@ -1,3 +1,4 @@
+import DeadlineOverview from '../components/DeadlineOverview'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
@@ -236,18 +237,7 @@ function Dashboard() {
             </div>
           ) : (
             <>
-              <section aria-label="Deadline overview" className="mb-md grid gap-sm sm:grid-cols-2">
-                <Link to="/issues?deadline=overdue" className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary focus-visible:outline-2">
-                  <span className="block text-label-md font-semibold">Resolution overdue</span>
-                  <strong className="text-headline-xl">{stats?.overdue_issues ?? 0}</strong>
-                  <span className="ml-sm text-body-md text-on-surface-variant">Unresolved issues past their final deadline</span>
-                </Link>
-                <Link to="/issues?deadline=missed" className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary focus-visible:outline-2">
-                  <span className="block text-label-md font-semibold">Missed stage targets</span>
-                  <strong className="text-headline-xl">{stats?.missed_target_issues ?? 0}</strong>
-                  <span className="ml-sm text-body-md text-on-surface-variant">Active issues with a pending or late milestone</span>
-                </Link>
-              </section>
+              <DeadlineOverview stats={stats} />
               {/* Integrated Issue Progress Pipeline */}
               <section
                 aria-label="Issue Progress"

@@ -1,6 +1,6 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineFilters from '../components/DeadlineFilters'
-import { deadlineState, compareResolutionDates, type DeadlineFilter } from '../lib/deadlines'
+import { deadlineState, compareResolutionDates, comparePendingDeadlines, type DeadlineFilter } from '../lib/deadlines'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
@@ -56,6 +56,7 @@ const priorityOptions: {
 ]
 
 type SortOption =
+  | 'next_deadline_asc'
   | 'deadline_asc'
   | 'updated_desc'
   | 'updated_asc'
@@ -64,6 +65,7 @@ type SortOption =
   | 'priority_desc'
 
 const sortOptions: { value: SortOption; label: string }[] = [
+  { value: 'next_deadline_asc', label: 'Nearest pending target' },
   { value: 'deadline_asc', label: 'Nearest resolution deadline' },
   { value: 'updated_desc', label: 'Recently Updated' },
   { value: 'updated_asc', label: 'Oldest Updated' },
@@ -266,11 +268,12 @@ function MyTasks() {
     if (deadlineFilter) {
       list = list.filter((task) => {
         const state = deadlineState(task, new Date(minute * 60_000 + 1))
-        return deadlineFilter === 'overdue' ? state.overdue : task.status !== 'DONE' && state.missedStage
+        return deadlineFilter === 'upcoming' ? state.dueSoon : deadlineFilter === 'overdue' ? state.overdue : task.status !== 'DONE' && state.missedStage
       })
     }
     list.sort((a, b) => {
       switch (sortBy) {
+        case 'next_deadline_asc': return comparePendingDeadlines(a, b) || b.issue_number - a.issue_number
         case 'deadline_asc': return compareResolutionDates(a, b) || b.issue_number - a.issue_number
         case 'updated_asc':
           return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
@@ -315,7 +318,7 @@ function MyTasks() {
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
           <LoadError message={loadError} onRetry={() => void loadTasks(true)} />
-          <DeadlineFilters filter={deadlineFilter} onChange={setDeadlineFilter} />
+          <DeadlineFilters filter={deadlineFilter} onChange={(value) => { setDeadlineFilter(value); if (value === 'upcoming') setSortBy('next_deadline_asc') }} />
           {/* Header & Filter Controls */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>

@@ -7,6 +7,7 @@ export default function DeadlineSummary({ issue, compact = false }: { issue: Iss
   const timezone = useUserTimezone()
   const state = deadlineState(issue)
   const mode = deadlineMode(issue)
+  if (mode === 'none') return <p className={compact ? 'text-body-md text-on-surface-variant' : 'mb-md text-body-md text-on-surface-variant'}>No deadline</p>
   const resolution = state.targets.find((target) => target.key === 'resolve_by')
   const nextTarget = state.targets.find((target) => target.key !== 'resolve_by' && target.target && !target.actual && !target.unknown)
     ?? [...state.targets].reverse().find((target) => target.key !== 'resolve_by' && target.target)
@@ -21,7 +22,7 @@ export default function DeadlineSummary({ issue, compact = false }: { issue: Iss
           {resolution?.target && <span className="block">{deadlineLabel('resolve_by', mode)} {formatSavedDeadline(issue, 'resolve_by', timezone)}</span>}
           {nextTarget?.target && <span className="block">{deadlineLabel(nextTarget.key, mode)} {formatSavedDeadline(issue, nextTarget.key, timezone)}</span>}
         </div>
-      ) : mode !== 'none' ? (
+      ) : (
         <>
           <p className="mb-sm text-body-md text-on-surface-variant">Your timezone: {timezone}</p>
           <dl className={`grid gap-sm ${mode === 'stages' ? 'sm:grid-cols-2 lg:grid-cols-4' : ''}`}>
@@ -35,7 +36,7 @@ export default function DeadlineSummary({ issue, compact = false }: { issue: Iss
           </dl>
           {mode === 'stages' && issue.status === 'FAILED' && <p className="mt-sm text-body-md text-on-surface-variant">This attempt's QA decision is recorded. Resuming development starts the next work cycle and retains the saved targets.</p>}
         </>
-      ) : <p className="text-body-md text-on-surface-variant">This issue has no scheduled targets.</p>}
+      )}
     </div>
   )
 }

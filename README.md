@@ -70,6 +70,16 @@ optional Close by target. Hidden draft entries survive toggling while editing;
 only the selected type is saved. Editing a saved issue requires acknowledging
 targets that a mode change removes. History records the old/new mode and times.
 
+Apply **0031_due_soon_issues.sql** after 0030 before deploying the Due soon card.
+It counts each unresolved issue once when its next scheduled unfinished target
+falls between now and 168 hours from now. Single mode uses resolution; Stages
+uses the first unfinished scheduled milestone, including an optional close target.
+An overdue pending target is not skipped in favor of a later future target.
+Completed and unscheduled issues are excluded. A completed-late stage may still
+overlap with a future target, so dashboard counters are not mutually exclusive.
+Clicking Due soon opens the matching backlog filter ordered by nearest pending
+target. The same filter and ordering are available in My Tasks.
+
 Migration 0030 uses the browser/device timezone for new deadline entry and converts
 saved UTC cutoffs into each viewer's local timezone for lists, details, and history.
 No project timezone setup is required. The detected timezone is visible beside the
@@ -126,7 +136,8 @@ npm run build
 ```
 
 Node tests cover account isolation, late cache responses, cache expiry/invalidation,
-partial upload retries, date ordering, timezone boundaries, and deadline indicators.
+partial upload retries, date ordering, timezone boundaries, deadline indicators,
+and rendered controls/history for each deadline type.
 They also run all application migrations and SQL regressions in embedded PostgreSQL
 using PGlite (development-only). Minimal test schemas represent Supabase Auth and
 Storage; actual HTTP auth, uploads, and Realtime still need a deployed smoke test.
@@ -149,6 +160,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/privacy_storage_and_de
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_deadlines.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/deadline_modes_and_times.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/user_local_deadline_timezones.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/due_soon_issues.sql
 ```
 
 Browser checks: tab through each modal, close with Escape, and confirm focus returns
