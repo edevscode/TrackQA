@@ -16,6 +16,7 @@ export type ConfirmModalProps = {
   variant?: ConfirmVariant
   icon?: ReactNode
   isLoading?: boolean
+  confirmDisabled?: boolean
 }
 
 export default function ConfirmModal({
@@ -28,6 +29,7 @@ export default function ConfirmModal({
   cancelLabel = 'Cancel',
   variant = 'danger',
   isLoading = false,
+  confirmDisabled = false,
 }: ConfirmModalProps) {
   const dialogRef = useDialogFocus(open)
   useEffect(() => {
@@ -103,7 +105,7 @@ export default function ConfirmModal({
           </button>
           <button
             type="button"
-            disabled={isLoading}
+            disabled={isLoading || confirmDisabled}
             onClick={onConfirm}
             className={`flex items-center justify-center gap-xs rounded-md px-md py-xs text-body-md font-medium disabled:opacity-60 transition-colors ${confirmBtnStyles}`}
           >

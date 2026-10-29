@@ -17,6 +17,7 @@ import type { FormEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
+import MemberRoleControl from '../components/MemberRoleControl'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
@@ -64,7 +65,7 @@ function Members() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { currentProject, refreshProjects } = useProject()
+  const { currentProject, currentRole, refreshProjects } = useProject()
 
   const [members, setMembers] = useState<MemberRow[]>([])
   const [pendingInvitations, setPendingInvitations] = useState<ProjectInvitation[]>([])
@@ -93,7 +94,7 @@ function Members() {
     onConfirm: () => {},
   })
 
-  const isOwner = members.some((m) => m.user_id === user?.id && m.role === 'OWNER')
+  const isOwner = currentRole === 'OWNER'
 
   const handleCopyCode = async () => {
     if (!currentProject?.access_code) return
@@ -163,33 +164,26 @@ function Members() {
     })
   }, [members, search, roleFilter])
 
-  const handleRoleChange = async (userId: string, role: ProjectRole) => {
-    if (!currentProject || !isOwner) return
-    setActionError(null)
+  const handleRoleChange = async (userId: string, previousRole: ProjectRole, role: ProjectRole): Promise<string | null> => {
+    if (!currentProject || !isOwner || userId === user?.id) return 'Only a project owner can change another member’s role.'
 
-    const previousRole = members.find((m) => m.user_id === userId)?.role
-
-    // Optimistic UI update
-    setMembers((prev) =>
-      prev.map((m) => (m.user_id === userId ? { ...m, role } : m)),
-    )
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('project_members')
       .update({ role })
       .eq('project_id', currentProject.id)
       .eq('user_id', userId)
+      .eq('role', previousRole)
+      .select('user_id, role')
+      .maybeSingle()
 
-    if (error) {
-      if (previousRole) {
-        setMembers((prev) =>
-          prev.map((m) => (m.user_id === userId ? { ...m, role: previousRole } : m)),
-        )
-      }
-      setActionError(error.message)
-    } else {
-      invalidateMembersCache(currentProject.id)
+    if (error) return error.message
+    invalidateMembersCache(currentProject.id)
+    if (!data) {
+      void load(true)
+      return 'The member or your access has changed. Review the current member list before trying again.'
     }
+    setMembers((prev) => prev.map((member) => member.user_id === userId ? { ...member, role: data.role } : member))
+    return null
   }
 
   const handleRemove = (userId: string, name: string) => {
@@ -493,7 +487,7 @@ function Members() {
 
                     return (
                       <div
-                        key={member.user_id}
+                        key={`${currentProject?.id}:${member.user_id}`}
                         className="p-sm hover:bg-surface-container-low/50 transition-colors lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(140px,0.8fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:gap-sm lg:px-md"
                       >
                         <div className="flex min-w-0 items-center gap-xs">
@@ -517,31 +511,12 @@ function Members() {
                           {member.email}
                         </span>
 
-                        <div>
-                          {isOwner && member.user_id !== user?.id ? (
-                            <div className="relative inline-block">
-                              <select
-                                value={member.role}
-                                onChange={(e) =>
-                                  handleRoleChange(member.user_id, e.target.value as ProjectRole)
-                                }
-                                className={`appearance-none rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase outline-none pr-5 ${roleInfo.className}`}
-                              >
-                                <option value="DEVELOPER">DEV</option>
-                                <option value="QA">QA LAB</option>
-                                <option value="OWNER">OWNER</option>
-                              </select>
-                              <ChevronDown
-                                size={11}
-                                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-70"
-                              />
-                            </div>
-                          ) : (
-                            <span
-                              className={`inline-block rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}
-                            >
-                              {roleInfo.label}
-                            </span>
+                        <div className="flex flex-wrap items-center gap-xs">
+                          <span className={`inline-block rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}>
+                            {roleInfo.label}
+                          </span>
+                          {isOwner && member.user_id !== user?.id && (
+                            <MemberRoleControl member={member} projectName={currentProject?.name ?? ''} onSave={(previous, next) => handleRoleChange(member.user_id, previous, next)} />
                           )}
                         </div>
 
