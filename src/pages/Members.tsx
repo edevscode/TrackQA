@@ -17,7 +17,6 @@ import type { FormEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
-import MemberRoleControl from '../components/MemberRoleControl'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
@@ -164,28 +163,6 @@ function Members() {
     })
   }, [members, search, roleFilter])
 
-  const handleRoleChange = async (userId: string, previousRole: ProjectRole, role: ProjectRole): Promise<string | null> => {
-    if (!currentProject || !isOwner || userId === user?.id) return 'Only a project owner can change another member’s role.'
-
-    const { data, error } = await supabase
-      .from('project_members')
-      .update({ role })
-      .eq('project_id', currentProject.id)
-      .eq('user_id', userId)
-      .eq('role', previousRole)
-      .select('user_id, role')
-      .maybeSingle()
-
-    if (error) return error.message
-    invalidateMembersCache(currentProject.id)
-    if (!data) {
-      void load(true)
-      return 'The member or your access has changed. Review the current member list before trying again.'
-    }
-    setMembers((prev) => prev.map((member) => member.user_id === userId ? { ...member, role: data.role } : member))
-    return null
-  }
-
   const handleRemove = (userId: string, name: string) => {
     if (!currentProject || !isOwner) return
     setConfirmModal({
@@ -324,7 +301,7 @@ function Members() {
                 </h1>
               </div>
               <p className="mt-xs text-body-md text-on-surface-variant">
-                Manage project operators, development assignees, and QA lab permissions.
+                View project members, their roles, and assigned work.
               </p>
             </div>
 
@@ -342,7 +319,7 @@ function Members() {
 
           {!isOwner && (
             <div className="mb-md rounded-lg border border-outline-variant bg-surface-container-low p-sm text-body-md text-on-surface-variant">
-              You are viewing this project as an operator. Only the project owner can invite or modify member roles.
+              Only project owners can invite or remove members. Member roles are managed in Project Settings.
             </div>
           )}
 
@@ -389,11 +366,6 @@ function Members() {
               {actionError}
             </div>
           )}
-
-          <p className="mb-md text-body-md text-on-surface-variant">
-            Reassign unresolved development issues before moving a member out of development or removing them.
-            Reporters must finish their unresolved reports before leaving or moving from QA or Owner to Developer.
-          </p>
 
           {/* Filter Bar */}
           <div className="mb-md flex flex-wrap items-center gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-sm">
@@ -451,12 +423,12 @@ function Members() {
             ) : (
               <>
                 {/* Desktop Table Header */}
-                <div className="hidden border-b border-outline-variant bg-surface-container-low px-md py-xs font-mono text-code-xs font-bold uppercase tracking-wider text-on-surface-variant lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(140px,0.8fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:gap-sm">
+                <div className="hidden border-b border-outline-variant bg-surface-container-low px-md py-xs font-mono text-code-xs font-bold uppercase tracking-wider text-on-surface-variant lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(100px,0.65fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:gap-sm">
                   <span>Operator</span>
                   <span>Email Address</span>
                   <span>Assigned Role</span>
                   <span>Active Queue</span>
-                  <span className="text-right">Action</span>
+                  <span className="text-right">Actions</span>
                 </div>
 
                 <div className="divide-y divide-outline-variant">
@@ -467,7 +439,7 @@ function Members() {
                         type="button"
                         aria-label="Leave project"
                         onClick={handleLeave}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
                         title="Leave project"
                       >
                         <LogOut size={16} />
@@ -478,7 +450,7 @@ function Members() {
                         type="button"
                         aria-label={`Remove ${member.full_name ?? member.email}`}
                         onClick={() => handleRemove(member.user_id, member.full_name ?? member.email)}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
                         title="Remove member"
                       >
                         <UserMinus size={16} />
@@ -488,9 +460,9 @@ function Members() {
                     return (
                       <div
                         key={`${currentProject?.id}:${member.user_id}`}
-                        className="p-sm hover:bg-surface-container-low/50 transition-colors lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(140px,0.8fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:gap-sm lg:px-md"
+                        className="grid grid-cols-[minmax(0,1fr)_auto] gap-sm p-md hover:bg-surface-container-low/50 transition-colors lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(100px,0.65fr)_minmax(90px,0.6fr)_60px] lg:items-center lg:py-sm"
                       >
-                        <div className="flex min-w-0 items-center gap-xs">
+                        <div className="col-span-2 flex min-w-0 items-center gap-xs lg:col-span-1">
                           <Avatar
                             name={member.full_name}
                             avatarUrl={member.avatar_url}
@@ -507,24 +479,23 @@ function Members() {
                           </span>
                         </div>
 
-                        <span className="min-w-0 truncate font-mono text-code-xs text-on-surface-variant">
+                        <span className="col-span-2 block min-w-0 truncate font-mono text-code-xs text-on-surface-variant lg:col-span-1" title={member.email}>
                           {member.email}
                         </span>
 
-                        <div className="flex flex-wrap items-center gap-xs">
+                        <div>
                           <span className={`inline-block rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}>
                             {roleInfo.label}
                           </span>
-                          {isOwner && member.user_id !== user?.id && (
-                            <MemberRoleControl member={member} projectName={currentProject?.name ?? ''} onSave={(previous, next) => handleRoleChange(member.user_id, previous, next)} />
-                          )}
                         </div>
 
-                        <span className="font-mono text-code-xs text-on-surface">
+                        <span className="text-right font-mono text-code-xs text-on-surface lg:text-left">
                           {member.assigned_issues} tickets
                         </span>
 
-                        <div className="text-right">{leaveButton || removeButton}</div>
+                        <div className={`col-span-2 items-center justify-end gap-sm lg:col-span-1 ${leaveButton || removeButton ? 'flex flex-wrap border-t border-outline-variant pt-sm lg:border-0 lg:pt-0' : 'hidden lg:flex'}`}>
+                          {leaveButton || removeButton}
+                        </div>
                       </div>
                     )
                   })}

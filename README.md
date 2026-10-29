@@ -28,8 +28,9 @@ Run `npm run dev` to start the frontend.
   invitees who need to see their inviter/project owner.
 - Only project owners directly edit invitations. Recipients accept/decline through
   checked functions; acceptance preserves the assigned role.
-- Member roles appear as badges. Owners use Change role to review the current
-  and proposed roles, then explicitly confirm before a change is saved.
+- Member roles appear as badges. Owners manage roles in Project Settings → Member
+  Roles, review the current and proposed roles, and explicitly confirm changes.
+  The Members page displays roles without role-editing controls.
 - New issue reports require QA or Owner membership in that project. Development
   assignments accept only Developer or Owner members; leaving an issue unassigned
   is allowed. Only the assigned Developer or Owner can start/resume development

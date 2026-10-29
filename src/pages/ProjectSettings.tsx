@@ -2,7 +2,6 @@ import LoadError from '../components/LoadError'
 import {
   AlertTriangle,
   Check,
-  ChevronDown,
   ChevronRight,
   Copy,
   Pencil,
@@ -15,6 +14,7 @@ import type { FormEvent, ReactNode, RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
+import MemberRoleControl from '../components/MemberRoleControl'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
@@ -24,6 +24,7 @@ import {
   fetchProjectSettingsData,
   invalidateProjectCache,
   invalidateProjectSettingsCache,
+  invalidateMembersCache,
   prefetchAccountSettingsData,
   type ProjectSettingsMember,
 } from '../lib/cache'
@@ -53,7 +54,7 @@ function ProjectSettings() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { currentProject, projects, refreshProjects, setCurrentProjectId } = useProject()
+  const { currentProject, currentRole, projects, refreshProjects, setCurrentProjectId } = useProject()
 
   const [tab, setTab] = useState('General')
   const generalRef = useRef<HTMLFormElement>(null)
@@ -139,7 +140,7 @@ function ProjectSettings() {
     onRefresh: () => loadMembers(true),
   })
 
-  const isOwner = Boolean(user?.id && currentProject?.owner_id === user.id)
+  const isOwner = currentRole === 'OWNER'
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault()
@@ -164,15 +165,24 @@ function ProjectSettings() {
     await refreshProjects()
   }
 
-  const handleRoleChange = async (userId: string, role: ProjectRole) => {
-    if (!currentProject || !isOwner) return
-    setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)))
-    invalidateProjectSettingsCache(currentProject.id)
-    await supabase
+  const handleRoleChange = async (userId: string, previousRole: ProjectRole, role: ProjectRole): Promise<string | null> => {
+    if (!currentProject || !isOwner || userId === user?.id) return 'Only a project owner can change another member’s role.'
+    const { data, error } = await supabase
       .from('project_members')
       .update({ role })
       .eq('project_id', currentProject.id)
       .eq('user_id', userId)
+      .eq('role', previousRole)
+      .select('user_id, role')
+      .maybeSingle()
+    if (error) return error.message
+    invalidateMembersCache(currentProject.id)
+    if (!data) {
+      void loadMembers(true)
+      return 'The member or your access has changed. Review the current member list before trying again.'
+    }
+    setMembers((prev) => prev.map((member) => member.user_id === userId ? { ...member, role: data.role } : member))
+    return null
   }
 
   const handleRemoveMember = (userId: string, memberName: string) => {
@@ -521,16 +531,17 @@ function ProjectSettings() {
 
               {/* Member Roles & Access */}
               <div
+                id="member-roles"
                 ref={memberRolesRef}
                 className="scroll-mt-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant pb-xs mb-sm">
+                <div className="mb-sm flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant pb-xs">
                   <div>
                     <h2 className="text-body-md font-bold uppercase tracking-wider text-on-surface">
-                      Personnel Access Matrix
+                      Member Roles
                     </h2>
                     <p className="font-mono text-code-xs text-on-surface-variant">
-                      Project roles, triage access, and QA execution rights.
+                      Review project responsibilities. Role changes require confirmation.
                     </p>
                   </div>
                   {isOwner && (
@@ -545,15 +556,20 @@ function ProjectSettings() {
                   )}
                 </div>
 
+                {isOwner && <p className="mb-sm text-body-md text-on-surface-variant">
+                  Reassign unresolved development work before changing a member to QA or removing them.
+                  Reporters must finish their unresolved reports before leaving or moving from QA or Owner to Developer.
+                </p>}
+
                 <div className="divide-y divide-outline-variant">
                   {members.map((member) => {
                     const roleInfo = roleBadgeConfig[member.role]
                     return (
                       <div
-                        key={member.user_id}
-                        className="flex items-center justify-between gap-sm py-xs hover:bg-surface-container-low/50 transition-colors"
+                        key={`${currentProject.id}:${member.user_id}`}
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-sm py-sm hover:bg-surface-container-low/50 transition-colors sm:grid-cols-[minmax(0,1fr)_80px_128px]"
                       >
-                        <div className="flex items-center gap-xs min-w-0">
+                        <div className="col-span-2 flex min-w-0 items-center gap-xs sm:col-span-1">
                           <Avatar name={member.full_name} avatarUrl={member.avatar_url} size={28} />
                           <div className="min-w-0">
                             <p className="truncate text-body-md font-semibold text-on-surface">
@@ -565,33 +581,13 @@ function ProjectSettings() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-xs">
-                          {isOwner && member.user_id !== user?.id ? (
-                            <div className="relative inline-block">
-                              <select
-                                value={member.role}
-                                onChange={(e) =>
-                                  handleRoleChange(member.user_id, e.target.value as ProjectRole)
-                                }
-                                className={`appearance-none rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase outline-none pr-5 ${roleInfo.className}`}
-                              >
-                                <option value="DEVELOPER">DEV</option>
-                                <option value="QA">QA LAB</option>
-                                <option value="OWNER">OWNER</option>
-                              </select>
-                              <ChevronDown
-                                size={11}
-                                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-70"
-                              />
-                            </div>
-                          ) : (
-                            <span
-                              className={`inline-block rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}
-                            >
-                              {roleInfo.label}
-                            </span>
+                        <span className={`justify-self-start rounded border px-xs py-0.5 font-mono text-code-xs font-semibold uppercase ${roleInfo.className}`}>
+                          {roleInfo.label}
+                        </span>
+                        <div className="flex items-center justify-end gap-xs">
+                          {isOwner && member.user_id !== user?.id && (
+                            <MemberRoleControl member={member} projectName={currentProject.name} onSave={(previous, next) => handleRoleChange(member.user_id, previous, next)} />
                           )}
-
                           {isOwner && member.user_id !== user?.id && (
                             <button
                               type="button"
@@ -603,7 +599,7 @@ function ProjectSettings() {
                                   member.full_name ?? member.email,
                                 )
                               }
-                              className="inline-flex h-7 w-7 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded text-outline hover:bg-rose-500/10 hover:text-error transition-colors"
                             >
                               <UserMinus size={15} />
                             </button>

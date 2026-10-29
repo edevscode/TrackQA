@@ -53,7 +53,7 @@ export default function MemberRoleControl({ member, projectName, onSave }: Props
           setError(null)
           setOpen(true)
         }}
-        className="rounded border border-outline-variant px-xs py-0.5 text-label-md font-medium text-on-surface-variant transition-colors hover:border-primary hover:text-primary focus-visible:outline-2"
+        className="inline-flex min-h-8 items-center justify-center whitespace-nowrap rounded border border-outline-variant px-sm py-xs text-label-md font-medium text-on-surface-variant transition-colors hover:border-primary hover:text-primary focus-visible:outline-2"
       >
         Change role
       </button>
