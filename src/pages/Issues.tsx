@@ -101,7 +101,7 @@ function Issues() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { currentProject } = useProject()
+  const { currentProject, canReportIssues } = useProject()
   const minute = useDeadlineClock()
   const previousMinute = useRef(minute)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -282,14 +282,14 @@ function Issues() {
                   className={refreshing ? 'animate-spin text-primary' : ''}
                 />
               </button>
-              <button
+              {canReportIssues && <button
                 type="button"
                 onClick={() => navigate('/issues/new')}
                 className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
               >
                 <Plus size={16} />
                 <span>Report Issue</span>
-              </button>
+              </button>}
             </div>
           </div>
 
@@ -428,7 +428,7 @@ function Issues() {
                   >
                     Clear Filters
                   </button>
-                ) : (
+                ) : canReportIssues ? (
                   <button
                     type="button"
                     onClick={() => navigate('/issues/new')}
@@ -437,7 +437,7 @@ function Issues() {
                     <Plus size={16} />
                     <span>Report First Issue</span>
                   </button>
-                )}
+                ) : null}
               </div>
             ) : (
               <>

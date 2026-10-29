@@ -103,7 +103,7 @@ function timeAgo(iso: string) {
 function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { profile } = useAuth()
-  const { currentProject } = useProject()
+  const { currentProject, canReportIssues } = useProject()
   const minute = useDeadlineClock()
   const previousMinute = useRef(minute)
 
@@ -221,13 +221,13 @@ function Dashboard() {
                   className={refreshing ? 'animate-spin text-primary' : ''}
                 />
               </button>
-              <Link
+              {canReportIssues && <Link
                 to="/issues/new"
                 className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
               >
                 <Plus size={16} />
                 <span>New Issue</span>
-              </Link>
+              </Link>}
             </div>
           </div>
 
@@ -390,13 +390,13 @@ function Dashboard() {
                         <p className="text-body-lg text-on-surface-variant">
                           No issues recorded in this project yet.
                         </p>
-                        <Link
+                        {canReportIssues && <Link
                           to="/issues/new"
                           className="mt-sm inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container"
                         >
                           <Plus size={16} />
                           Report First Issue
-                        </Link>
+                        </Link>}
                       </div>
                     ) : (
                       <>
@@ -585,7 +585,7 @@ function Dashboard() {
                       </div>
                     )}
 
-                    <div className="border-t border-outline-variant p-md">
+                    {canReportIssues && <div className="border-t border-outline-variant p-md">
                       <Link
                         to="/issues/new"
                         className="flex w-full items-center justify-center gap-xs rounded-md border border-outline-variant bg-surface-container-low py-sm text-body-md font-semibold text-on-surface transition-colors hover:bg-surface-container"
@@ -593,7 +593,7 @@ function Dashboard() {
                         <Plus size={16} />
                         <span>Log Issue / Task</span>
                       </Link>
-                    </div>
+                    </div>}
                   </div>
 
                   {/* QA Workbench Fast Actions */}

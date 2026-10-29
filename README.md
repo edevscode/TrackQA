@@ -28,6 +28,11 @@ Run `npm run dev` to start the frontend.
   invitees who need to see their inviter/project owner.
 - Only project owners directly edit invitations. Recipients accept/decline through
   checked functions; acceptance preserves the assigned role.
+- New issue reports require QA or Owner membership in that project. Development
+  assignments accept only Developer or Owner members; leaving an issue unassigned
+  is allowed. Only the assigned Developer or Owner can start/resume development
+  or submit for testing. Owner administration, issue management, and closure
+  permissions remain unchanged.
 - Issue ID/number, project, reporter, and creation time are immutable. Owners and
   original reporters edit content. Assigned developers perform development
   transitions. Owners or reporters can delete issues.
@@ -48,6 +53,23 @@ Run `npm run dev` to start the frontend.
   presets allow uploads outside the app; disable the preset if not needed.
 
 ## Existing deployments
+
+Apply **0032_issue_responsibilities.sql** after 0031 before deploying the role
+restrictions. The database enforces them for direct API writes as well as the UI.
+The frontend hides reporting controls from Developers and refreshes project roles
+on membership events and when the tab regains focus.
+
+Migration 0032 does not rewrite existing reports, assignments, timestamps, or QA
+history. Existing Developer reporters remain able to verify their own reports.
+Legacy QA/nonmember assignments can remain unchanged during content edits;
+the reporter or an Owner can reassign them to an eligible member or clear them.
+QA assignees cannot perform development actions.
+
+Reassign unresolved development issues before removing a member or moving them
+to QA. Reporters with unresolved reports cannot leave/be removed; QA or Owner
+reporters cannot move to Developer until their reports are finished/closed (or
+deleted under existing permissions). Reporter IDs remain immutable. Roles may
+still move between QA and Owner, and completed history does not block a change.
 
 For the deadline release, apply **0028_issue_deadlines.sql** after 0027 and
 then **0029_deadline_modes_and_times.sql** and **0030_user_local_deadline_timezones.sql**
@@ -137,7 +159,8 @@ npm run build
 
 Node tests cover account isolation, late cache responses, cache expiry/invalidation,
 partial upload retries, date ordering, timezone boundaries, deadline indicators,
-and rendered controls/history for each deadline type.
+rendered controls/history for each deadline type, role restrictions, and legacy
+report compatibility across the responsibility migration.
 They also run all application migrations and SQL regressions in embedded PostgreSQL
 using PGlite (development-only). Minimal test schemas represent Supabase Auth and
 Storage; actual HTTP auth, uploads, and Realtime still need a deployed smoke test.
@@ -161,6 +184,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_deadlines.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/deadline_modes_and_times.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/user_local_deadline_timezones.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/due_soon_issues.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_responsibilities.sql
 ```
 
 Browser checks: tab through each modal, close with Escape, and confirm focus returns

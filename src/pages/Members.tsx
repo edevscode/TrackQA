@@ -396,6 +396,11 @@ function Members() {
             </div>
           )}
 
+          <p className="mb-md text-body-md text-on-surface-variant">
+            Reassign unresolved development issues before moving a member out of development or removing them.
+            Reporters must finish their unresolved reports before leaving or moving from QA or Owner to Developer.
+          </p>
+
           {/* Filter Bar */}
           <div className="mb-md flex flex-wrap items-center gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-sm">
             <div className="flex min-w-[240px] flex-1 items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md focus-within:border-primary transition-colors">

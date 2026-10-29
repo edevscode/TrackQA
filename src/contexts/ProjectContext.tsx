@@ -1,12 +1,15 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Project } from '../lib/database.types'
+import type { Project, ProjectRole } from '../lib/database.types'
+import { canReportIssues as roleCanReportIssues } from '../lib/permissions'
 import { useAuth } from './AuthContext'
 
 interface ProjectContextValue {
   projects: Project[]
   currentProject: Project | null
+  currentRole: ProjectRole | null
+  canReportIssues: boolean
   loading: boolean
   error: string | null
   setCurrentProjectId: (id: string) => void
@@ -20,19 +23,23 @@ const STORAGE_KEY = 'trackqa:currentProjectId'
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
+  const [roles, setRoles] = useState<{ userId: string; byProject: Record<string, ProjectRole> } | null>(null)
   const [currentProjectId, setCurrentProjectIdState] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY),
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestVersion = useRef(0)
 
-  const refreshProjects = useCallback(async () => {
+  const refreshProjects = useCallback(async (background = false) => {
+    const version = ++requestVersion.current
     if (!session) {
       setProjects([])
+      setRoles(null)
       setLoading(false)
       return
     }
-    setLoading(true)
+    if (!background) setLoading(true)
     setError(null)
     try {
 
@@ -46,7 +53,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       const fetchMemberships = () =>
         supabase
           .from('project_members')
-          .select('project:projects(*)')
+          .select('role, project_id, project:projects(*)')
           .eq('user_id', session.user.id)
 
       let { data, error } = await fetchMemberships()
@@ -64,6 +71,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         ;({ data, error } = await fetchMemberships())
       }
       if (error) throw error
+      if (version !== requestVersion.current) return
 
       const list = (data ?? [])
         .map((row) => row.project)
@@ -71,6 +79,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
       setProjects(list)
+      setRoles({ userId: session.user.id, byProject: Object.fromEntries((data ?? []).map((row) => [row.project_id, row.role])) })
 
       setCurrentProjectIdState((prev) => {
         if (prev && list.some((p) => p.id === prev)) return prev
@@ -78,9 +87,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       })
 
     } catch {
-      setError('Unable to load your projects. Check your connection and retry.')
+      if (version === requestVersion.current) setError('Unable to load your projects. Check your connection and retry.')
     } finally {
-      setLoading(false)
+      if (version === requestVersion.current) setLoading(false)
     }
   }, [session])
 
@@ -88,16 +97,33 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     refreshProjects()
   }, [refreshProjects])
 
+  useEffect(() => {
+    if (!session?.user.id) return
+    const channel = supabase.channel(`project-permissions:${session.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_members', filter: `user_id=eq.${session.user.id}` },
+        () => { void refreshProjects(true) })
+      .subscribe((status) => { if (status === 'SUBSCRIBED') void refreshProjects(true) })
+    // Refresh after returning to the tab, including missed Realtime events.
+    const onFocus = () => { void refreshProjects(true) }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      void supabase.removeChannel(channel)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [session?.user.id, refreshProjects])
+
   const setCurrentProjectId = useCallback((id: string) => {
     localStorage.setItem(STORAGE_KEY, id)
     setCurrentProjectIdState(id)
   }, [])
 
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null
+  const currentRole = currentProject && roles?.userId === session?.user.id
+    ? roles?.byProject[currentProject.id] ?? null : null
 
   return (
     <ProjectContext.Provider
-      value={{ projects, currentProject, loading, error, setCurrentProjectId, refreshProjects }}
+      value={{ projects, currentProject, currentRole, canReportIssues: roleCanReportIssues(currentRole), loading, error, setCurrentProjectId, refreshProjects }}
     >
       {children}
     </ProjectContext.Provider>

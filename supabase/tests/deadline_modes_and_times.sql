@@ -12,7 +12,7 @@ cross join lateral unnest(array[f.owner_id,f.reporter_id,f.developer_id,f.outsid
 insert into public.projects(id,name,key,owner_id)
 select project_id,'Timed deadlines','T'||upper(substr(replace(project_id::text,'-',''),1,8)),owner_id from timing_fixture;
 insert into public.project_members(project_id,user_id,role)
-select f.project_id,actor,case when actor=f.owner_id then 'OWNER'::public.project_role else 'DEVELOPER'::public.project_role end
+select f.project_id,actor,case when actor=f.owner_id then 'OWNER'::public.project_role when actor=f.reporter_id then 'QA'::public.project_role else 'DEVELOPER'::public.project_role end
 from timing_fixture f cross join lateral unnest(array[f.owner_id,f.reporter_id,f.developer_id]) actor;
 
 create function pg_temp.expect_timing_denied(statement text,expected_state text)

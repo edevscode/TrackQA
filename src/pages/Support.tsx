@@ -33,7 +33,7 @@ const FAQS: FAQItem[] = [
     category: 'roles',
     question: 'What are the permission differences between project roles?',
     answer:
-      'TrackQA provides 4 role tiers: QA Lead (full administrative rights, delete/archive permissions), QA Engineer (log issues, execute test verifications, assign issues), Developer (claim issues, move to In Dev, submit builds for QA testing), and Viewer (read-only audit access).',
+      'TrackQA has three project roles: Owner manages the project and retains existing issue permissions; QA reports issues and verifies their own reports; Developer starts or resumes assigned issues and submits them for testing. Only QA and Owners can create new reports. Development assignments must go to a Developer or Owner. Existing reports retain their original reporter and verification history.',
   },
   {
     id: 'key-prefix',
@@ -47,7 +47,7 @@ const FAQS: FAQItem[] = [
     category: 'workflow',
     question: 'What happens when an issue moves into "For Testing"?',
     answer:
-      'When an issue is moved to "For Testing", it enters the QA Test Bench queue. QA engineers are notified to execute reproduction tests and attach passing/failing test verdicts before closing the defect.',
+      'When an assigned Developer or Owner submits an issue for testing, the original reporter verifies it and records a pass/fail result with evidence. Other QA members cannot verify someone else’s report. A passed issue can be closed by its reporter or an Owner.',
   },
   {
     id: 'realtime-sync',
@@ -112,7 +112,7 @@ const KEYBOARD_SHORTCUTS = [
 
 export default function Support() {
   const { user, profile } = useAuth()
-  const { currentProject } = useProject()
+  const { currentProject, canReportIssues } = useProject()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [openFaq, setOpenFaq] = useState<string | null>('roles-diff')
@@ -235,7 +235,7 @@ export default function Support() {
 
           {/* Quick Topics Grid */}
           <div className="mb-lg grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-4">
-            {GUIDES.map(({ icon: Icon, title, description, tag, href }) => (
+            {GUIDES.filter((guide) => guide.href !== '/issues/new' || canReportIssues).map(({ icon: Icon, title, description, tag, href }) => (
               <Link
                 key={title}
                 to={href}
@@ -356,7 +356,7 @@ export default function Support() {
                   </h3>
                 </div>
                 <div className="grid grid-cols-1 gap-sm sm:grid-cols-2">
-                  {KEYBOARD_SHORTCUTS.map(({ keys, label }) => (
+                  {KEYBOARD_SHORTCUTS.filter((shortcut) => shortcut.label !== 'Create new issue' || canReportIssues).map(({ keys, label }) => (
                     <div
                       key={label}
                       className="flex items-center justify-between rounded-md border border-outline-variant bg-surface-container-low px-md py-sm"

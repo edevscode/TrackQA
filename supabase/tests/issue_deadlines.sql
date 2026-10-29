@@ -14,7 +14,7 @@ cross join lateral unnest(array[f.owner_id, f.reporter_id, f.developer_id, f.out
 insert into public.projects(id, name, key, owner_id)
 select project_id, 'Deadline regression', 'T' || upper(substr(replace(project_id::text, '-', ''), 1, 8)), owner_id from deadline_fixture;
 insert into public.project_members(project_id, user_id, role)
-select f.project_id, actor, case when actor = f.owner_id then 'OWNER'::public.project_role else 'DEVELOPER'::public.project_role end
+select f.project_id, actor, case when actor = f.owner_id then 'OWNER'::public.project_role when actor = f.reporter_id then 'QA'::public.project_role else 'DEVELOPER'::public.project_role end
 from deadline_fixture f cross join lateral unnest(array[f.owner_id, f.reporter_id, f.developer_id]) actor;
 
 create function pg_temp.expect_deadline_denied(statement text, expected_state text)

@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 import { seedLegacyDeadlines, assertLegacyDeadlineMigration } from './legacy-deadlines.fixture.mjs'
+import { seedLegacyResponsibilities, assertLegacyResponsibilities } from './legacy-responsibilities.fixture.mjs'
 
 // Supabase-owned services are represented by minimal auth/storage schemas.
 // Application migrations, RLS, triggers, and SQL regressions run unmodified.
@@ -34,9 +35,11 @@ test('PostgreSQL migrations and authorization/deadline regressions', async (t) =
       create publication supabase_realtime;
     `)
     let legacyFixture
+    let responsibilityFixture
     for (const name of (await readdir(new URL('../supabase/migrations/', import.meta.url))).sort()) {
       if (!name.endsWith('.sql')) continue
       if (name.startsWith('0029_')) legacyFixture = await seedLegacyDeadlines(db)
+      if (name.startsWith('0032_')) responsibilityFixture = await seedLegacyResponsibilities(db)
       await t.test(`migration ${name}`, async () => {
         await db.exec(await readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8'))
       })
@@ -48,6 +51,11 @@ test('PostgreSQL migrations and authorization/deadline regressions', async (t) =
       if (name.startsWith('0030_')) {
         await t.test('user-local timezone migration preserves existing UTC deadlines and history', async () => {
           await assertLegacyDeadlineMigration(db, legacyFixture)
+        })
+      }
+      if (name.startsWith('0032_')) {
+        await t.test('responsibility migration preserves old reports and allows legacy reporters to finish verification', async () => {
+          await assertLegacyResponsibilities(db, responsibilityFixture)
         })
       }
     }

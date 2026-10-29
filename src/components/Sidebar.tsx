@@ -15,6 +15,7 @@ import ConfirmModal from './ConfirmModal'
 import TrackQALogo from './TrackQALogo'
 import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
+import { useProject } from '../contexts/ProjectContext'
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutGrid, to: '/dashboard' },
@@ -27,6 +28,7 @@ const navItems = [
 function Sidebar() {
   const navigate = useNavigate()
   const { signOut } = useAuth()
+  const { canReportIssues } = useProject()
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar()
   const [showSignOutModal, setShowSignOutModal] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -78,7 +80,7 @@ function Sidebar() {
         </div>
 
         {/* Create Issue Action */}
-        <div className={`pb-sm ${collapsed ? 'px-xs' : 'px-sm pt-xs'}`}>
+        {canReportIssues && <div className={`pb-sm ${collapsed ? 'px-xs' : 'px-sm pt-xs'}`}>
           <Link
             to="/issues/new"
             onClick={() => setMobileOpen(false)}
@@ -92,7 +94,7 @@ function Sidebar() {
             <Plus size={collapsed ? 20 : 16} />
             {!collapsed && <span>Create Issue</span>}
           </Link>
-        </div>
+        </div>}
 
         {/* Navigation Items */}
         <nav className={`flex flex-1 flex-col gap-0.5 ${collapsed ? 'px-xs' : 'px-sm'}`}>

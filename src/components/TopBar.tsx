@@ -37,7 +37,7 @@ interface IssueSearchResult {
 function TopBar() {
   const navigate = useNavigate()
   const { profile, user } = useAuth()
-  const { projects, currentProject, setCurrentProjectId } = useProject()
+  const { projects, currentProject, canReportIssues, setCurrentProjectId } = useProject()
   const { collapsed, toggleCollapsed, toggleMobileOpen } = useSidebar()
 
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
@@ -188,8 +188,8 @@ function TopBar() {
         keywords: 'support help docs faqs shortcuts ticket contact',
         action: () => navigate('/support'),
       },
-    ],
-    [navigate],
+    ].filter((action) => action.id !== 'new-issue' || canReportIssues),
+    [navigate, canReportIssues],
   )
 
   const filteredNavActions = useMemo(() => {

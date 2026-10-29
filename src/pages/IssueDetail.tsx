@@ -1,6 +1,7 @@
 import DeadlineFields from '../components/DeadlineFields'
 import { useLocalDeadlineInput } from '../hooks/useLocalDeadlineInput'
 import DeadlineSummary from '../components/DeadlineSummary'
+import { canDevelopIssues } from '../lib/permissions'
 import DeadlineHistoryPanel from '../components/DeadlineHistoryPanel'
 import { deadlineInput, deadlinePayload, validateDeadlines, emptyDeadlines, removedDeadlineTargets, deadlineLabel, deadlineMode, formatSavedDeadline } from '../lib/deadlines'
 import type { DeadlineHistory } from '../lib/database.types'
@@ -306,7 +307,7 @@ function IssueDetail() {
         setCurrentProjectId(projectData.id)
       }
 
-      const [commentsRes, activityRes, attachmentsRes, historyRes] = await Promise.all([
+      const [commentsRes, activityRes, attachmentsRes, historyRes, membersRes] = await Promise.all([
         supabase
           .from('issue_comments')
           .select(
@@ -326,10 +327,16 @@ function IssueDetail() {
           .eq('issue_id', issueId)
           .order('created_at', { ascending: false }),
         supabase.from('issue_deadline_history').select('*').eq('issue_id', issueId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('project_members').select('user_id, role, profiles(full_name, avatar_url)').eq('project_id', issueRow.project_id),
       ])
-      for (const response of [commentsRes, activityRes, attachmentsRes, historyRes]) {
+      for (const response of [commentsRes, activityRes, attachmentsRes, historyRes, membersRes]) {
         if (response.error) throw response.error
       }
+      setMembers((membersRes.data ?? []).map((member) => ({
+        user_id: member.user_id, role: member.role,
+        full_name: member.profiles?.full_name ?? null,
+        avatar_url: member.profiles?.avatar_url ?? null,
+      })))
       setDeadlineHistory(historyRes.data ?? [])
       setComments((commentsRes.data as unknown as TimelineComment[]) ?? [])
       setActivity((activityRes.data as unknown as TimelineActivity[]) ?? [])
@@ -385,32 +392,6 @@ function IssueDetail() {
     issueId: issueId,
     onRefresh: () => load(),
   })
-
-  useEffect(() => {
-    const projectId = issue?.project_id || project?.id || currentProject?.id
-    if (!projectId) return
-    supabase
-      .from('project_members')
-      .select('user_id, role, profiles(full_name, avatar_url)')
-      .eq('project_id', projectId)
-      .then(({ data }) => {
-        setMembers(
-          (data ?? []).map((m) => {
-            const prof = (
-              m as unknown as {
-                profiles: { full_name: string | null; avatar_url: string | null } | null
-              }
-            ).profiles
-            return {
-              user_id: m.user_id,
-              role: m.role,
-              full_name: prof?.full_name ?? null,
-              avatar_url: prof?.avatar_url ?? null,
-            }
-          }),
-        )
-      })
-  }, [issue?.project_id, project?.id, currentProject?.id])
 
   const updateStatus = async (status: IssueStatus) => {
     if (!issue) return
@@ -525,6 +506,9 @@ function IssueDetail() {
   const handleSaveEdit = async (e: FormEvent) => {
     e.preventDefault()
     if (!issue || !editTitle.trim()) return
+    if (editAssigneeId && editAssigneeId !== issue.assignee_id && !members.some((member) => member.user_id === editAssigneeId && canDevelopIssues(member.role))) {
+      setEditError('Choose a developer or owner from this project, or leave the issue unassigned.'); return
+    }
     const deadlineError = validateDeadlines(editDeadlines, editDeadlines.entry_timezone, issue)
     if (deadlineError) { setEditError(deadlineError); return }
     if (removedTargets.length && reviewedRemovalKey !== removalReviewKey) {
@@ -677,11 +661,11 @@ function IssueDetail() {
   }
 
   const activeProject = project || currentProject
-  const isOwner = activeProject?.owner_id === user?.id
   const myRole = members.find((m) => m.user_id === user?.id)?.role
+  const isOwner = myRole === 'OWNER'
   const assigneeMember = members.find((m) => m.user_id === issue.assignee_id)
   const isAssignee = issue.assignee_id === user?.id
-  const canDev = isAssignee && (isOwner || myRole === 'DEVELOPER')
+  const canDev = isAssignee && canDevelopIssues(myRole)
   const isDone = issue.status === 'DONE'
   const isReporter = issue.reporter_id === user?.id
   // QA verification is reserved for the reporter alone — not the owner, not
@@ -1758,9 +1742,12 @@ function IssueDetail() {
                       className="w-full rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md text-on-surface outline-none focus:border-primary focus:bg-surface-container-lowest"
                     >
                       <option value="">Unassigned</option>
-                      {members.map((m) => (
-                        <option key={m.user_id} value={m.user_id}>
-                          {m.full_name ?? 'Unnamed'} ({m.role})
+                      {issue.assignee_id && !members.some((m) => m.user_id === issue.assignee_id) && (
+                        <option value={issue.assignee_id} disabled>Previous assignee (not a member)</option>
+                      )}
+                      {members.filter((m) => canDevelopIssues(m.role) || m.user_id === issue.assignee_id).map((m) => (
+                        <option key={m.user_id} value={m.user_id} disabled={!canDevelopIssues(m.role)}>
+                          {m.full_name ?? 'Unnamed'} ({m.role}){!canDevelopIssues(m.role) ? ' — previous assignment' : ''}
                         </option>
                       ))}
                     </select>

@@ -11,7 +11,7 @@ cross join lateral unnest(array[f.owner_id,f.reporter_id,f.developer_id]) actor;
 insert into public.projects(id,name,key,owner_id)
 select project_id,'User timezone regression','Z'||upper(substr(replace(project_id::text,'-',''),1,8)),owner_id from user_zone_fixture;
 insert into public.project_members(project_id,user_id,role)
-select f.project_id,actor,case when actor=f.owner_id then 'OWNER'::public.project_role else 'DEVELOPER'::public.project_role end
+select f.project_id,actor,case when actor=f.owner_id then 'OWNER'::public.project_role when actor=f.reporter_id then 'QA'::public.project_role else 'DEVELOPER'::public.project_role end
 from user_zone_fixture f cross join lateral unnest(array[f.owner_id,f.reporter_id,f.developer_id]) actor;
 create function pg_temp.expect_user_zone_denied(statement text,expected_state text)
 returns void language plpgsql as $$

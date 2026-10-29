@@ -16,14 +16,15 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { MAX_UPLOAD_BYTES } from '../lib/cloudinary'
 import { supabase } from '../lib/supabase'
-import type { IssuePriority } from '../lib/database.types'
+import type { IssuePriority, ProjectRole } from '../lib/database.types'
+import { canDevelopIssues } from '../lib/permissions'
 import { clearIssueDraft, getIssueDraft, setIssueDraft } from '../lib/issueDraftStore'
 import { invalidateProjectCache } from '../lib/cache'
 
@@ -73,12 +74,12 @@ const priorities: {
 const inputClass =
   'w-full rounded-md border border-outline-variant bg-surface-container-lowest px-md py-sm text-body-md text-on-surface outline-none placeholder:text-outline focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all'
 
-type Member = { user_id: string; full_name: string | null }
+type Member = { user_id: string; role: ProjectRole; full_name: string | null }
 
 function CreateIssue() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { currentProject } = useProject()
+  const { currentProject, canReportIssues } = useProject()
 
   const draft = getIssueDraft()
   const [deadlines, setDeadlines] = useLocalDeadlineInput(draft)
@@ -102,6 +103,7 @@ function CreateIssue() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!canReportIssues) return
     setIssueDraft({
       ...deadlines,
       title,
@@ -115,24 +117,37 @@ function CreateIssue() {
       browser,
       appVersion,
     })
-  }, [title, description, steps, expected, actual, priority, assigneeId, device, browser, appVersion, deadlines])
+  }, [title, description, steps, expected, actual, priority, assigneeId, device, browser, appVersion, deadlines, canReportIssues])
 
   useEffect(() => {
-    if (!currentProject) return
-    supabase
+    if (!currentProject || !canReportIssues) return
+    let active = true
+    const loadMembers = () => { void supabase
       .from('project_members')
-      .select('user_id, profiles(full_name)')
+      .select('user_id, role, profiles(full_name)')
       .eq('project_id', currentProject.id)
       .then(({ data }) => {
+        if (!active) return
         setMembers(
           (data ?? []).map((m) => ({
             user_id: m.user_id,
+            role: m.role,
             full_name: (m as unknown as { profiles: { full_name: string | null } }).profiles
               ?.full_name,
           })),
         )
-      })
-  }, [currentProject])
+      }) }
+    loadMembers()
+    const channel = supabase.channel(`issue-assignees:${currentProject.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_members', filter: `project_id=eq.${currentProject.id}` }, loadMembers)
+      .subscribe((status) => { if (status === 'SUBSCRIBED') loadMembers() })
+    window.addEventListener('focus', loadMembers)
+    return () => {
+      active = false
+      void supabase.removeChannel(channel)
+      window.removeEventListener('focus', loadMembers)
+    }
+  }, [currentProject, canReportIssues])
 
   const addFiles = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
@@ -158,7 +173,10 @@ function CreateIssue() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!currentProject || !user) return
+    if (!currentProject || !user || !canReportIssues) return
+    if (assigneeId && !members.some((member) => member.user_id === assigneeId && canDevelopIssues(member.role))) {
+      setError('Choose a developer or owner from this project, or leave the issue unassigned.'); return
+    }
 
     const deadlineError = validateDeadlines(deadlines)
     if (deadlineError) { setError(deadlineError); return }
@@ -203,6 +221,8 @@ function CreateIssue() {
     clearIssueDraft()
     navigate('/issues')
   }
+
+  if (!canReportIssues) return <Navigate to="/issues" replace />
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -454,9 +474,9 @@ function CreateIssue() {
                       className={inputClass}
                     >
                       <option value="">Unassigned</option>
-                      {members.map((m) => (
+                      {members.filter((m) => canDevelopIssues(m.role)).map((m) => (
                         <option key={m.user_id} value={m.user_id}>
-                          {m.full_name ?? 'Unnamed'}
+                          {m.full_name ?? 'Unnamed'} ({m.role === 'OWNER' ? 'Owner' : 'Developer'})
                         </option>
                       ))}
                     </select>
