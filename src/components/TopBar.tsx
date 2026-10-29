@@ -162,9 +162,9 @@ function TopBar() {
       },
       {
         id: 'nav-mytasks',
-        label: 'My Assigned Tasks',
+        label: 'My Tasks & Reports',
         icon: CircleCheck,
-        keywords: 'tasks assigned to me work',
+        keywords: 'tasks assigned reported to me work history completed',
         action: () => navigate('/my-tasks'),
       },
       {
@@ -302,9 +302,9 @@ function TopBar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-sm border-b border-outline-variant bg-surface-container-lowest py-sm px-md lg:gap-md lg:px-lg">
+    <header className="sticky top-0 z-30 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-sm border-b border-outline-variant bg-surface-container-lowest py-sm px-md sm:flex sm:justify-between lg:gap-md lg:px-lg">
       {/* Left side: Sidebar Toggle + Direct Search Bar */}
-      <div className="flex flex-1 items-center gap-sm min-w-0 max-w-3xl lg:max-w-4xl xl:max-w-5xl">
+      <div className="contents sm:flex sm:flex-1 sm:items-center sm:gap-sm sm:min-w-0 sm:max-w-3xl lg:max-w-4xl xl:max-w-5xl">
         {/* Sidebar Retract/Expand Toggle Button */}
         <button
           type="button"
@@ -319,8 +319,7 @@ function TopBar() {
         {/* Direct Search Input with Attached Dropdown */}
         <div
           ref={searchContainerRef}
-          className="relative flex-1 min-w-[280px] sm:min-w-[360px] md:min-w-[480px] max-w-[760px] xl:max-w-[880px]"
-          style={{ minWidth: '280px', maxWidth: '880px' }}
+          className="relative col-span-2 row-start-2 min-w-0 sm:flex-1 sm:max-w-[760px] xl:max-w-[880px]"
         >
           <div
             onClick={() => searchInputRef.current?.focus()}
@@ -345,8 +344,7 @@ function TopBar() {
               onFocus={() => setSearchFocused(true)}
               onKeyDown={handleKeyDown}
               placeholder="Search issues, projects, pages..."
-              className="w-full flex-1 min-w-[140px] bg-transparent text-body-md text-on-surface outline-none placeholder:text-on-surface-variant/60"
-              style={{ minWidth: '140px' }}
+              className="w-full min-w-0 flex-1 bg-transparent text-body-md text-on-surface outline-none placeholder:text-on-surface-variant/60"
             />
 
             {searchQuery ? (
@@ -428,7 +426,7 @@ function TopBar() {
                               isSelected ? 'text-on-primary/80' : 'text-on-surface-variant'
                             }`}
                           >
-                            {issue.status}
+                            {issue.status === 'DONE' ? 'Completed' : issue.status === 'PASSED' ? 'Awaiting closure' : issue.status.replaceAll('_', ' ')}
                           </span>
                         </button>
                       )
@@ -554,7 +552,7 @@ function TopBar() {
       </div>
 
       {/* Right side: Notifications, Project Switcher, Avatar */}
-      <div className="flex items-center gap-xs sm:gap-sm shrink-0">
+      <div className="col-start-2 row-start-1 flex shrink-0 items-center justify-self-end gap-xs sm:gap-sm">
         {/* Notifications Button */}
         <button
           type="button"

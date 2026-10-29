@@ -1,5 +1,7 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineFilters from '../components/DeadlineFilters'
+import IssueLifecycleTabs from '../components/IssueLifecycleTabs'
+import { issueLifecycle, matchesLifecycle, workGroup, workGroupOrder, workGroups, type IssueLifecycle } from '../lib/issueWork'
 import { deadlineState, compareResolutionDates, comparePendingDeadlines, type DeadlineFilter } from '../lib/deadlines'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
@@ -16,7 +18,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
@@ -164,19 +166,37 @@ function timeAgo(iso: string) {
 function MyTasks() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { user } = useAuth()
-  const { currentProject } = useProject()
+  const { currentProject, currentRole } = useProject()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const lifecycle = issueLifecycle(searchParams.get('view'))
   const minute = useDeadlineClock()
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>('')
 
-  const [tab, setTab] = useState<'assigned' | 'reported'>('assigned')
+  const [tab, updateTab] = useState<'mine' | 'assigned' | 'reported'>('mine')
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const requestVersion = useRef(0)
 
   // Filters and Sort State
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<IssueStatus | ''>('')
-  const [priorityFilter, setPriorityFilter] = useState<IssuePriority | ''>('')
-  const [sortBy, setSortBy] = useState<SortOption>('updated_desc')
+  const [searchQuery, updateSearchQuery] = useState('')
+  const [statusFilter, updateStatusFilter] = useState<IssueStatus | ''>('')
+  const [priorityFilter, updatePriorityFilter] = useState<IssuePriority | ''>('')
+  const [sortBy, updateSortBy] = useState<SortOption>('updated_desc')
+  const setSearchQuery = (value: string) => { updateSearchQuery(value); setPage(1) }
+  const setStatusFilter = (value: IssueStatus | '') => { updateStatusFilter(value); setPage(1) }
+  const setPriorityFilter = (value: IssuePriority | '') => { updatePriorityFilter(value); setPage(1) }
+  const setSortBy = (value: SortOption) => { updateSortBy(value); setPage(1) }
+  const setTab = (value: 'mine' | 'assigned' | 'reported') => { updateTab(value); setPage(1) }
+  const setLifecycle = (value: IssueLifecycle) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', value)
+    setSearchParams(params)
+    setStatusFilter('')
+    setDeadlineFilter('')
+    if (value === 'completed') setSortBy('updated_desc')
+    setPage(1)
+  }
 
   // Menu open dropdown state
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
@@ -208,7 +228,7 @@ function MyTasks() {
     async (forceRefresh = false) => {
       if (!currentProject || !user) return
 
-      const cacheKey = `mytasks:${currentProject.id}:${user.id}:${tab}`
+      const cacheKey = `mytasks:${currentProject.id}:${user.id}:${tab}:${lifecycle}`
       const hasCached = !forceRefresh && queryCache.get(cacheKey)
 
       if (!hasCached) {
@@ -216,21 +236,24 @@ function MyTasks() {
       }
 
       setLoadError(null)
+      const version = ++requestVersion.current
       try {
         const data = await fetchMyTasksData(currentProject.id, user.id, tab, {
           forceRefresh,
+          lifecycle,
         })
+        if (version !== requestVersion.current) return
         setTasks(data)
       } catch {
-        setLoadError('Unable to load data. Check your connection and retry.')
+        if (version === requestVersion.current) setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
-        setLoading(false)
+        if (version === requestVersion.current) setLoading(false)
       }
 
       // Prefetch Members page while on My Tasks
       prefetchMembersData(currentProject.id)
     },
-    [currentProject, user, tab],
+    [currentProject, user, tab, lifecycle],
   )
 
   useEffect(() => {
@@ -245,7 +268,8 @@ function MyTasks() {
 
   // Filter and sort tasks
   const filteredTasks = useMemo(() => {
-    let list = [...tasks]
+    let list = tasks.filter((task) => matchesLifecycle(task.status, lifecycle)
+      && (tab === 'mine' ? task.assignee_id === user?.id || task.reporter_id === user?.id : tab === 'assigned' ? task.assignee_id === user?.id : task.reporter_id === user?.id))
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim()
@@ -272,6 +296,8 @@ function MyTasks() {
       })
     }
     list.sort((a, b) => {
+      const groupOrder = workGroupOrder(a, user?.id ?? '', currentRole) - workGroupOrder(b, user?.id ?? '', currentRole)
+      if (groupOrder) return groupOrder
       switch (sortBy) {
         case 'next_deadline_asc': return comparePendingDeadlines(a, b) || b.issue_number - a.issue_number
         case 'deadline_asc': return compareResolutionDates(a, b) || b.issue_number - a.issue_number
@@ -290,7 +316,15 @@ function MyTasks() {
     })
 
     return list
-  }, [tasks, searchQuery, statusFilter, priorityFilter, sortBy, currentProject?.key, deadlineFilter, minute])
+  }, [tasks, searchQuery, statusFilter, priorityFilter, sortBy, currentProject?.key, deadlineFilter, minute, lifecycle, tab, user?.id, currentRole])
+
+  const pageSize = 12
+  const totalPages = Math.max(1, Math.ceil(filteredTasks.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageTasks = filteredTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const groupedTasks = workGroups.map((group) => ({ ...group,
+    tasks: pageTasks.filter((task) => workGroup(task, user?.id ?? '', currentRole) === group.key),
+  })).filter((group) => group.tasks.length)
 
   const hasActiveFilters =
     Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter) || Boolean(deadlineFilter)
@@ -318,7 +352,6 @@ function MyTasks() {
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
           <LoadError message={loadError} onRetry={() => void loadTasks(true)} />
-          <DeadlineFilters filter={deadlineFilter} onChange={(value) => { setDeadlineFilter(value); if (value === 'upcoming') setSortBy('next_deadline_asc') }} />
           {/* Header & Filter Controls */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -327,11 +360,11 @@ function MyTasks() {
                   [{currentProject?.key ?? 'QA'}]
                 </span>
                 <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">
-                  Operator Queue
+                  My Tasks
                 </h1>
               </div>
               <p className="mt-xs text-body-md text-on-surface-variant">
-                Tickets requiring active development, verification runs, or authored triage.
+                Current responsibilities and completed history for this project. Passed issues remain active until closed.
               </p>
             </div>
 
@@ -387,7 +420,7 @@ function MyTasks() {
                     <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
                       Filter Status
                     </div>
-                    {statusOptions.map((opt) => (
+                    {statusOptions.filter((option) => !option.value || matchesLifecycle(option.value, lifecycle)).map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
@@ -488,7 +521,7 @@ function MyTasks() {
                     <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
                       Sort Queue By
                     </div>
-                    {sortOptions.map((opt) => (
+                    {sortOptions.filter((option) => lifecycle !== 'completed' || (option.value !== 'deadline_asc' && option.value !== 'next_deadline_asc')).map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
@@ -512,6 +545,8 @@ function MyTasks() {
             </div>
           </div>
 
+          <IssueLifecycleTabs value={lifecycle} onChange={setLifecycle} />
+          {lifecycle !== 'completed' && <DeadlineFilters filter={deadlineFilter} onChange={(value) => { setDeadlineFilter(value); setPage(1); if (value === 'upcoming') setSortBy('next_deadline_asc') }} />}
           {/* Active Filter Chips Bar */}
           {hasActiveFilters && (
             <div className="mb-md flex flex-wrap items-center gap-xs">
@@ -571,11 +606,13 @@ function MyTasks() {
           )}
 
           {/* Tabs: Assigned vs Reported */}
-          <div className="mb-md flex items-center justify-between border-b border-outline-variant">
-            <div className="flex items-center gap-md">
+          <div className="mb-md flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant">
+            <div className="flex flex-wrap items-center gap-md">
+              <button type="button" onClick={() => setTab('mine')} aria-pressed={tab === 'mine'} className={`-mb-px border-b-2 pb-xs text-body-md font-semibold ${tab === 'mine' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant'}`}>My work</button>
               <button
                 type="button"
                 onClick={() => setTab('assigned')}
+                aria-pressed={tab === 'assigned'}
                 className={`-mb-px border-b-2 pb-xs text-body-md font-semibold transition-colors ${
                   tab === 'assigned'
                     ? 'border-primary text-primary'
@@ -587,6 +624,7 @@ function MyTasks() {
               <button
                 type="button"
                 onClick={() => setTab('reported')}
+                aria-pressed={tab === 'reported'}
                 className={`-mb-px border-b-2 pb-xs text-body-md font-semibold transition-colors ${
                   tab === 'reported'
                     ? 'border-primary text-primary'
@@ -598,7 +636,7 @@ function MyTasks() {
             </div>
 
             <span className="pb-xs font-mono text-code-xs text-on-surface-variant">
-              {filteredTasks.length} QUEUED {filteredTasks.length === 1 ? 'ITEM' : 'ITEMS'}
+              {filteredTasks.length} {lifecycle === 'completed' ? 'COMPLETED' : lifecycle === 'active' ? 'ACTIVE' : 'TOTAL'} {filteredTasks.length === 1 ? 'ISSUE' : 'ISSUES'}
             </span>
           </div>
 
@@ -610,14 +648,12 @@ function MyTasks() {
           ) : filteredTasks.length === 0 ? (
             <div className="flex min-h-[360px] flex-col items-center justify-center gap-xs rounded-lg border border-outline-variant bg-surface-container-lowest p-xl text-center">
               <p className="text-headline-md font-semibold text-on-surface">
-                {hasActiveFilters ? 'No matching queue items' : 'Queue is clear'}
+                {hasActiveFilters ? 'No matching issues' : lifecycle === 'completed' ? 'No completed issues yet' : lifecycle === 'all' ? 'No related issues yet' : 'No active work in this view'}
               </p>
               <p className="w-full max-w-[28rem] text-body-md text-on-surface-variant">
                 {hasActiveFilters
                   ? 'No tasks matched your current search and filter criteria.'
-                  : tab === 'assigned'
-                    ? 'No tickets currently assigned to your operator account in this project.'
-                    : 'You have not authored any issues in this project yet.'}
+                  : lifecycle === 'completed' ? 'Closed issues will appear here with their history.' : 'Completed history is available in Completed. Use All to see the full history for this relationship.'}
               </p>
               {hasActiveFilters && (
                 <button
@@ -630,53 +666,69 @@ function MyTasks() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-3">
-              {filteredTasks.map((task) => {
-                const Priority = priorityConfig[task.priority]
-                const Status = statusConfig[task.status]
-                const PriorityIcon = Priority.icon
-                const ticketAnchor = `[${currentProject?.key ?? 'TASK'}-${task.issue_number}]`
+            <div className="space-y-lg">
+              {groupedTasks.map((group) => (
+                <section key={group.key} aria-label={group.label}>
+                  <h2 className="text-headline-md font-semibold">{group.label}</h2>
+                  <p className="mb-sm text-body-md text-on-surface-variant">{group.description}</p>
+                  <div className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-3">
+                    {group.tasks.map((task) => {
+                      const Priority = priorityConfig[task.priority]
+                      const Status = statusConfig[task.status]
+                      const PriorityIcon = Priority.icon
+                      const ticketAnchor = `[${currentProject?.key ?? 'TASK'}-${task.issue_number}]`
 
-                return (
-                  <Link
-                    key={task.id}
-                    to={`/issues/${task.id}`}
-                    className="group flex flex-col justify-between rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary/50 transition-colors"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-xs">
-                        <span className="font-mono text-code-xs font-bold text-on-surface group-hover:text-primary transition-colors">
-                          {ticketAnchor}
-                        </span>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${Priority.badgeClass}`}
+                      return (
+                        <Link
+                          key={task.id}
+                          to={`/issues/${task.id}`}
+                          className="group flex flex-col justify-between rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary/50 transition-colors"
                         >
-                          <PriorityIcon size={12} className={Priority.iconClass} />
-                          {Priority.label}
-                        </span>
-                      </div>
+                          <div>
+                            <div className="flex items-center justify-between gap-xs">
+                              <span className="font-mono text-code-xs font-bold text-on-surface group-hover:text-primary transition-colors">
+                                {ticketAnchor}
+                              </span>
+                              <span
+                                className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${Priority.badgeClass}`}
+                              >
+                                <PriorityIcon size={12} className={Priority.iconClass} />
+                                {Priority.label}
+                              </span>
+                            </div>
 
-                      <h2 className="mt-xs line-clamp-2 text-body-lg font-semibold text-on-surface group-hover:text-primary transition-colors">
-                        {task.title}
-                      </h2>
-                      <DeadlineSummary issue={task} compact />
-                    </div>
+                            <h3 className="mt-xs line-clamp-2 text-body-lg font-semibold text-on-surface group-hover:text-primary transition-colors">
+                              {task.title}
+                            </h3>
+                            <DeadlineSummary issue={task} compact />
+                          </div>
 
-                    <div className="mt-md flex items-center justify-between border-t border-outline-variant pt-xs">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${Status.badgeClass}`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${Status.dotClass}`} />
-                        {Status.label}
-                      </span>
-                      <span className="flex items-center gap-xs font-mono text-code-xs text-outline">
-                        <Clock size={12} />
-                        {timeAgo(task.updated_at)}
-                      </span>
-                    </div>
-                  </Link>
-                )
-              })}
+                          <div className="mt-md flex items-center justify-between border-t border-outline-variant pt-xs">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded border px-xs py-0.5 text-label-md font-semibold ${Status.badgeClass}`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${Status.dotClass}`} />
+                              {Status.label}
+                            </span>
+                            <span className="flex items-center gap-xs font-mono text-code-xs text-outline">
+                              <Clock size={12} />
+                              {timeAgo(task.updated_at)}
+                            </span>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
+              <div className="flex flex-wrap items-center justify-between gap-sm border-t border-outline-variant pt-md text-body-md">
+                <span>Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, filteredTasks.length)} of {filteredTasks.length}. Groups reflect this page.</span>
+                {totalPages > 1 && <div className="flex items-center gap-sm">
+                  <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded border border-outline-variant px-sm py-xs disabled:opacity-40">Previous</button>
+                  <span>Page {currentPage} of {totalPages}</span>
+                  <button type="button" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} className="rounded border border-outline-variant px-sm py-xs disabled:opacity-40">Next</button>
+                </div>}
+              </div>
             </div>
           )}
         </main>

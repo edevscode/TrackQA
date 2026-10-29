@@ -24,6 +24,24 @@ Run `npm run dev` to start the frontend.
 
 ## Permissions and evidence
 
+Issue lists use Active / Completed / All, defaulting to Active. Active includes
+OPEN, IN_PROGRESS, FOR_TESTING, FAILED, and PASSED; only DONE is Completed.
+Scope filters run in database queries before backlog pagination. Completed issues
+remain searchable through global search and retain their evidence and history.
+
+My Tasks defaults to My work (assigned to or reported by the current member,
+counted once). Active work is grouped into Needs your action, In progress, and
+Waiting using current workflow permissions. Existing Developer reporters retain
+their QA responsibility. Relationship filters and history views remain available.
+Cards paginate in groups of 12; the selected scope is read in batches to avoid
+silently truncating group totals at the API row limit. Sort order applies within
+each responsibility group. Completed history is fetched only when selected.
+
+Dashboard personal work stays separate from project workload. Active totals
+include passed/failed issues; owners can review Unassigned work through its
+backlog filter. Members' Active Queue counts exclude completed assignments.
+No database migration or record relocation is needed for this organization.
+
 - Profiles are visible to the account itself, shared project members, and pending
   invitees who need to see their inviter/project owner.
 - Only project owners directly edit invitations. Recipients accept/decline through

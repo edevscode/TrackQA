@@ -1,5 +1,7 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineFilters from '../components/DeadlineFilters'
+import IssueLifecycleTabs from '../components/IssueLifecycleTabs'
+import { issueLifecycle, matchesLifecycle, type IssueLifecycle } from '../lib/issueWork'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import type { DeadlineFilter, DeadlineSort } from '../lib/deadlines'
 import LoadError from '../components/LoadError'
@@ -105,8 +107,13 @@ function Issues() {
   const minute = useDeadlineClock()
   const previousMinute = useRef(minute)
   const [searchParams, setSearchParams] = useSearchParams()
+  const requestedStatus = searchParams.get('status')
+  const urlStatus: IssueStatus | '' = requestedStatus && Object.hasOwn(statusConfig, requestedStatus) ? requestedStatus as IssueStatus : ''
+  const lifecycle = issueLifecycle(searchParams.get('view'), urlStatus)
+  const statusFilter: IssueStatus | '' = urlStatus && matchesLifecycle(urlStatus, lifecycle) ? urlStatus : ''
+  const assigneeFilter = searchParams.get('assignee') ?? ''
   const requestedDeadline = searchParams.get('deadline')
-  const deadlineFilter: DeadlineFilter = requestedDeadline === 'overdue' || requestedDeadline === 'missed' || requestedDeadline === 'upcoming' ? requestedDeadline : ''
+  const deadlineFilter: DeadlineFilter = lifecycle !== 'completed' && (requestedDeadline === 'overdue' || requestedDeadline === 'missed' || requestedDeadline === 'upcoming') ? requestedDeadline : ''
   const requestedSort = searchParams.get('order')
   const sortBy: DeadlineSort = requestedSort === 'newest' || requestedSort === 'deadline' || requestedSort === 'next'
     ? requestedSort : deadlineFilter === 'upcoming' ? 'next' : 'newest'
@@ -119,11 +126,33 @@ function Issues() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [page, setPage] = useState(1)
+  const requestVersion = useRef(0)
 
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<IssueStatus | ''>('')
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority | ''>('')
-  const [assigneeFilter, setAssigneeFilter] = useState('')
+  const setStatusFilter = (value: IssueStatus | '') => {
+    const params = new URLSearchParams(searchParams)
+    if (value) params.set('status', value)
+    else params.delete('status')
+    if (value && !matchesLifecycle(value, lifecycle)) params.set('view', value === 'DONE' ? 'completed' : 'active')
+    setSearchParams(params)
+    setPage(1)
+  }
+  const setAssigneeFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams)
+    if (value) params.set('assignee', value)
+    else params.delete('assignee')
+    setSearchParams(params)
+    setPage(1)
+  }
+  const setLifecycle = (value: IssueLifecycle) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('view', value)
+    if (statusFilter && !matchesLifecycle(statusFilter, value)) params.delete('status')
+    if (value === 'completed') params.delete('deadline')
+    setSearchParams(params)
+    setPage(1)
+  }
   const setSortBy = (value: DeadlineSort) => {
     const params = new URLSearchParams(searchParams)
     params.set('order', value)
@@ -163,6 +192,7 @@ function Issues() {
       const params = {
         page,
         pageSize: PAGE_SIZE,
+        lifecycle,
         statusFilter,
         priorityFilter,
         assigneeFilter,
@@ -174,6 +204,7 @@ function Issues() {
       const cacheKey = `issues:${currentProject.id}:${JSON.stringify({
         page,
         pageSize: PAGE_SIZE,
+        lifecycle,
         statusFilter: statusFilter || '',
         priorityFilter: priorityFilter || '',
         assigneeFilter: assigneeFilter || '',
@@ -190,25 +221,26 @@ function Issues() {
       }
 
       setLoadError(null)
+      const version = ++requestVersion.current
       try {
         const [res] = await Promise.all([
           fetchIssuesData(currentProject.id, params, { forceRefresh }),
           forceRefresh ? new Promise((r) => setTimeout(r, 500)) : Promise.resolve(),
         ])
+        if (version !== requestVersion.current) return
         setIssues(res.issues)
         setTotalCount(res.totalCount)
       } catch {
-        setLoadError('Unable to load data. Check your connection and retry.')
+        if (version === requestVersion.current) setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        if (version === requestVersion.current) { setLoading(false); setRefreshing(false) }
       }
 
       if (user?.id) {
         prefetchMyTasksData(currentProject.id, user.id)
       }
     },
-    [currentProject, user, page, statusFilter, priorityFilter, assigneeFilter, search, deadlineFilter, sortBy],
+    [currentProject, user, page, statusFilter, priorityFilter, assigneeFilter, search, deadlineFilter, sortBy, lifecycle],
   )
 
   useEffect(() => {
@@ -225,10 +257,10 @@ function Issues() {
 
   const clearFilters = () => {
     setSearch('')
-    setStatusFilter('')
     setPriorityFilter('')
-    setAssigneeFilter('')
-    setDeadlineFilter('')
+    const params = new URLSearchParams(searchParams)
+    for (const key of ['status', 'assignee', 'deadline']) params.delete(key)
+    setSearchParams(params)
     setPage(1)
   }
 
@@ -251,7 +283,6 @@ function Issues() {
 
         <main className="flex-1 px-md py-md lg:px-lg lg:py-lg">
           <LoadError message={loadError} onRetry={() => void loadIssues(true)} />
-          <DeadlineFilters filter={deadlineFilter} onChange={setDeadlineFilter} sort={sortBy} onSort={(value) => { setSortBy(value); setPage(1) }} />
           {/* Header Bar */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -293,6 +324,8 @@ function Issues() {
             </div>
           </div>
 
+          <IssueLifecycleTabs value={lifecycle} onChange={setLifecycle} />
+          {lifecycle !== 'completed' && <DeadlineFilters filter={deadlineFilter} onChange={setDeadlineFilter} sort={sortBy} onSort={setSortBy} />}
           {/* Integrated Workbench Filter Bar */}
           <div className="mb-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
             <div className="flex flex-wrap items-center gap-sm">
@@ -328,6 +361,7 @@ function Issues() {
               {/* Status Select */}
               <div className="relative">
                 <select
+                  aria-label="Issue status"
                   value={statusFilter}
                   onChange={(e) => {
                     setStatusFilter(e.target.value as IssueStatus | '')
@@ -336,7 +370,7 @@ function Issues() {
                   className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-xs pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low transition-colors"
                 >
                   <option value="">All Statuses</option>
-                  {(Object.keys(statusConfig) as IssueStatus[]).map((s) => (
+                  {(Object.keys(statusConfig) as IssueStatus[]).filter((status) => matchesLifecycle(status, lifecycle)).map((s) => (
                     <option key={s} value={s}>
                       {statusConfig[s].label}
                     </option>
@@ -382,6 +416,7 @@ function Issues() {
                   className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-xs pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low transition-colors"
                 >
                   <option value="">All Assignees</option>
+                  <option value="unassigned">Unassigned</option>
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.full_name ?? 'Unnamed'}
@@ -418,7 +453,7 @@ function Issues() {
                 <p className="text-body-lg text-on-surface-variant">
                   {hasFilters
                     ? 'No issues match the selected filter criteria.'
-                    : 'No issues logged for this project yet.'}
+                    : lifecycle === 'active' ? 'No active issues. Completed history is available in Completed.' : lifecycle === 'completed' ? 'No completed issues yet. Passed issues stay Active until closed.' : 'No issues logged for this project yet.'}
                 </p>
                 {hasFilters ? (
                   <button
@@ -428,7 +463,7 @@ function Issues() {
                   >
                     Clear Filters
                   </button>
-                ) : canReportIssues ? (
+                ) : canReportIssues && lifecycle !== 'completed' ? (
                   <button
                     type="button"
                     onClick={() => navigate('/issues/new')}
@@ -447,7 +482,7 @@ function Issues() {
                     const status = statusConfig[issue.status]
                     const priority = priorityConfig[issue.priority]
                     const PriorityIcon = priority.icon
-                    const resolved = issue.status === 'PASSED' || issue.status === 'DONE'
+                    const resolved = issue.status === 'DONE'
 
                     return (
                       <div
@@ -519,7 +554,7 @@ function Issues() {
                         const status = statusConfig[issue.status]
                         const priority = priorityConfig[issue.priority]
                         const PriorityIcon = priority.icon
-                        const resolved = issue.status === 'PASSED' || issue.status === 'DONE'
+                        const resolved = issue.status === 'DONE'
 
                         return (
                           <tr

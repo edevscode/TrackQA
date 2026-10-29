@@ -11,6 +11,7 @@ import type {
   IssueDeadlines,
 } from './database.types'
 import type { DeadlineFilter, DeadlineSort } from './deadlines'
+import type { IssueLifecycle } from './issueWork'
 
 import { MemoryCache } from './memoryCache'
 
@@ -67,60 +68,55 @@ export type DashboardRecentIssue = Pick<
 
 export type DashboardTask = Pick<
   Issue,
-  'id' | 'issue_number' | 'title' | 'status' | 'updated_at'
+  'id' | 'issue_number' | 'title' | 'status' | 'updated_at' | 'reporter_id' | 'assignee_id'
 >
 
 export type DashboardData = {
   stats: ProjectDashboardStats | null
   recentIssues: DashboardRecentIssue[]
   myTasks: DashboardTask[]
+  unassignedCount: number
 }
 
 export async function fetchDashboardData(
   projectId: string,
   userId: string,
-  options?: { forceRefresh?: boolean; ttlMs?: number },
+  options?: { forceRefresh?: boolean; ttlMs?: number; lifecycle?: IssueLifecycle },
 ): Promise<DashboardData> {
   const scopeVersion = queryCache.scopeVersion
-  const cacheKey = `dashboard:${projectId}:${userId}`
+  const lifecycle = options?.lifecycle ?? 'active'
+  const cacheKey = `dashboard:${projectId}:${userId}:${lifecycle}`
 
   if (!options?.forceRefresh) {
     const cached = queryCache.get<DashboardData>(cacheKey)
     if (cached) return cached
   }
 
-  const [statsRes, issuesRes, tasksRes] = await Promise.all([
+  let recentQuery = supabase.from('issues').select(
+    'id, issue_number, title, status, priority, assignee:profiles!issues_assignee_id_fkey(full_name, avatar_url)',
+  ).eq('project_id', projectId)
+  if (lifecycle === 'active') recentQuery = recentQuery.neq('status', 'DONE')
+  if (lifecycle === 'completed') recentQuery = recentQuery.eq('status', 'DONE')
+  const [statsRes, issuesRes, personalTasks, unassignedRes] = await Promise.all([
     supabase
       .from('v_project_dashboard_stats')
       .select('*')
       .eq('project_id', projectId)
       .maybeSingle(),
-    supabase
-      .from('issues')
-      .select(
-        'id, issue_number, title, status, priority, assignee:profiles!issues_assignee_id_fkey(full_name, avatar_url)',
-      )
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false })
-      .limit(4),
-    supabase
-      .from('issues')
-      .select('id, issue_number, title, status, updated_at')
-      .eq('project_id', projectId)
-      .eq('assignee_id', userId)
-      .neq('status', 'DONE')
-      .order('updated_at', { ascending: false })
-      .limit(3),
+    recentQuery.order('updated_at', { ascending: false }).limit(4),
+    fetchMyTasksData(projectId, userId, 'mine', { forceRefresh: options?.forceRefresh, lifecycle: 'active' }),
+    supabase.from('issues').select('id', { count: 'exact', head: true }).eq('project_id', projectId).neq('status', 'DONE').is('assignee_id', null),
   ])
 
-  for (const response of [statsRes, issuesRes, tasksRes]) {
+  for (const response of [statsRes, issuesRes, unassignedRes]) {
     if (response.error) throw response.error
   }
 
   const result: DashboardData = {
     stats: statsRes.data ?? null,
     recentIssues: (issuesRes.data as unknown as DashboardRecentIssue[]) ?? [],
-    myTasks: (tasksRes.data as unknown as DashboardTask[]) ?? [],
+    myTasks: personalTasks,
+    unassignedCount: unassignedRes.count ?? 0,
   }
 
   queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
@@ -148,6 +144,7 @@ export type IssueQueryParams = {
   search?: string
   deadlineFilter?: DeadlineFilter
   sortBy?: DeadlineSort
+  lifecycle?: IssueLifecycle
 }
 
 export type IssuesResponse = {
@@ -165,6 +162,7 @@ export async function fetchIssuesData(
   const normalizedParams = {
     page,
     pageSize,
+    lifecycle: params.lifecycle ?? 'active',
     statusFilter: params.statusFilter || '',
     priorityFilter: params.priorityFilter || '',
     assigneeFilter: params.assigneeFilter || '',
@@ -189,6 +187,8 @@ export async function fetchIssuesData(
     )
     .eq('project_id', projectId)
 
+  if (normalizedParams.lifecycle === 'active') query = query.neq('status', 'DONE')
+  if (normalizedParams.lifecycle === 'completed') query = query.eq('status', 'DONE')
   if (normalizedParams.statusFilter) {
     query = query.eq('status', normalizedParams.statusFilter as IssueStatus)
   }
@@ -196,7 +196,7 @@ export async function fetchIssuesData(
     query = query.eq('priority', normalizedParams.priorityFilter as IssuePriority)
   }
   if (normalizedParams.assigneeFilter) {
-    query = query.eq('assignee_id', normalizedParams.assigneeFilter)
+    query = normalizedParams.assigneeFilter === 'unassigned' ? query.is('assignee_id', null) : query.eq('assignee_id', normalizedParams.assigneeFilter)
   }
   if (normalizedParams.search) {
     query = query.ilike('title', `%${normalizedParams.search}%`)
@@ -204,7 +204,8 @@ export async function fetchIssuesData(
   if (normalizedParams.deadlineFilter === 'overdue') query = query.eq('is_overdue', true)
   if (normalizedParams.deadlineFilter === 'missed') query = query.eq('has_missed_target', true).neq('status', 'DONE')
   if (normalizedParams.deadlineFilter === 'upcoming') query = query.eq('is_due_soon', true)
-  if (normalizedParams.sortBy === 'deadline') query = query.order('resolution_sort_date', { ascending: true, nullsFirst: false })
+  if (normalizedParams.lifecycle === 'completed') query = query.order('updated_at', { ascending: false })
+  else if (normalizedParams.sortBy === 'deadline') query = query.order('resolution_sort_date', { ascending: true, nullsFirst: false })
   if (normalizedParams.sortBy === 'next') query = query.order('next_deadline_at', { ascending: true, nullsFirst: false })
 
   const { data, count, error } = await query
@@ -247,11 +248,12 @@ export type MyTasksItem = IssueDeadlines & Pick<
 export async function fetchMyTasksData(
   projectId: string,
   userId: string,
-  tab: 'assigned' | 'reported',
-  options?: { forceRefresh?: boolean; ttlMs?: number },
+  tab: 'mine' | 'assigned' | 'reported',
+  options?: { forceRefresh?: boolean; ttlMs?: number; lifecycle?: IssueLifecycle },
 ): Promise<MyTasksItem[]> {
   const scopeVersion = queryCache.scopeVersion
-  const cacheKey = `mytasks:${projectId}:${userId}:${tab}`
+  const lifecycle = options?.lifecycle ?? 'active'
+  const cacheKey = `mytasks:${projectId}:${userId}:${tab}:${lifecycle}`
 
   if (!options?.forceRefresh) {
     const cached = queryCache.get<MyTasksItem[]>(cacheKey)
@@ -265,13 +267,26 @@ export async function fetchMyTasksData(
 
   if (tab === 'assigned') {
     query = query.eq('assignee_id', userId)
-  } else {
+  } else if (tab === 'reported') {
     query = query.eq('reporter_id', userId)
+  } else {
+    query = query.or(`assignee_id.eq.${userId},reporter_id.eq.${userId}`)
   }
+  if (lifecycle === 'active') query = query.neq('status', 'DONE')
+  if (lifecycle === 'completed') query = query.eq('status', 'DONE')
 
-  const { data, error } = await query.order('updated_at', { ascending: false })
-  if (error) throw error
-  const result = (data as MyTasksItem[]) ?? []
+  // Read the selected scope in batches so personal group totals are not silently
+  // truncated by the API row limit. Completed history is fetched only on request.
+  const result: MyTasksItem[] = []
+  const batchSize = 500
+  query = query.order('updated_at', { ascending: false }).order('id', { ascending: true })
+  for (let offset = 0; ; offset += batchSize) {
+    const { data, error } = await query.range(offset, offset + batchSize - 1)
+    if (error) throw error
+    const rows = (data as MyTasksItem[]) ?? []
+    result.push(...rows)
+    if (rows.length < batchSize) break
+  }
 
   queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return result
@@ -279,6 +294,7 @@ export async function fetchMyTasksData(
 
 export function prefetchMyTasksData(projectId: string, userId: string): void {
   if (!projectId || !userId) return
+  fetchMyTasksData(projectId, userId, 'mine').catch(() => {})
   fetchMyTasksData(projectId, userId, 'assigned').catch(() => {})
   fetchMyTasksData(projectId, userId, 'reported').catch(() => {})
 }
@@ -320,7 +336,7 @@ export async function fetchMembersData(
       .eq('project_id', projectId),
     supabase
       .from('v_member_stats')
-      .select('user_id, assigned_issues')
+      .select('user_id, assigned_issues, completed_issues')
       .eq('project_id', projectId),
     supabase
       .from('project_invitations')
@@ -335,7 +351,7 @@ export async function fetchMembersData(
   }
 
   const statsByUser = new Map(
-    (statsRes.data ?? []).map((s) => [s.user_id, s.assigned_issues]),
+    (statsRes.data ?? []).map((s) => [s.user_id, Math.max(0, s.assigned_issues - s.completed_issues)]),
   )
 
   const rows: MemberListItem[] = (membersRes.data ?? []).map((m) => {

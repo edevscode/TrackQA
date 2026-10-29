@@ -29,6 +29,10 @@ interface FAQItem {
 
 const FAQS: FAQItem[] = [
   {
+    id: 'active-and-completed', category: 'workflow', question: 'Where can I find completed issues?',
+    answer: 'Issue lists open on Active. Choose Completed for closed (DONE) issues, or All for both. PASSED issues remain Active until closed. My Tasks groups your assigned and reported issues into Needs your action, In progress, and Waiting; Completed keeps their history separately. Global search includes completed issues.',
+  },
+  {
     id: 'roles-diff',
     category: 'roles',
     question: 'What are the permission differences between project roles?',

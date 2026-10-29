@@ -1,19 +1,19 @@
 import DeadlineOverview from '../components/DeadlineOverview'
+import IssueWorkOverview from '../components/IssueWorkOverview'
+import IssueLifecycleTabs from '../components/IssueLifecycleTabs'
+import { workGroup, workGroups, workGroupOrder, type IssueLifecycle } from '../lib/issueWork'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
   ArrowRight,
   Calendar,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronsUp,
   ChevronUp,
-  CircleDot,
   Clock,
   Equal,
   FlaskConical,
-  PlayCircle,
   Plus,
   RefreshCw,
   Settings,
@@ -102,8 +102,11 @@ function timeAgo(iso: string) {
 
 function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null)
-  const { profile } = useAuth()
-  const { currentProject, canReportIssues } = useProject()
+  const { profile, user } = useAuth()
+  const { currentProject, currentRole, canReportIssues } = useProject()
+  const [lifecycle, setLifecycle] = useState<IssueLifecycle>('active')
+  const [unassignedCount, setUnassignedCount] = useState(0)
+  const requestVersion = useRef(0)
   const minute = useDeadlineClock()
   const previousMinute = useRef(minute)
 
@@ -115,10 +118,10 @@ function Dashboard() {
 
   const loadData = useCallback(
     async (forceRefresh = false) => {
-      if (!currentProject) return
+      if (!currentProject || !user) return
 
-      const userId = profile?.id ?? ''
-      const cacheKey = `dashboard:${currentProject.id}:${userId}`
+      const userId = user.id
+      const cacheKey = `dashboard:${currentProject.id}:${userId}:${lifecycle}`
       const hasCached = !forceRefresh && queryCache.get(cacheKey)
 
       if (forceRefresh) {
@@ -128,24 +131,26 @@ function Dashboard() {
       }
 
       setLoadError(null)
+      const version = ++requestVersion.current
       try {
         const [data] = await Promise.all([
-          fetchDashboardData(currentProject.id, userId, { forceRefresh }),
+          fetchDashboardData(currentProject.id, userId, { forceRefresh, lifecycle }),
           forceRefresh ? new Promise((r) => setTimeout(r, 500)) : Promise.resolve(),
         ])
+        if (version !== requestVersion.current) return
         setStats(data.stats)
         setRecentIssues(data.recentIssues)
         setMyTasks(data.myTasks)
+        setUnassignedCount(data.unassignedCount)
       } catch {
-        setLoadError('Unable to load data. Check your connection and retry.')
+        if (version === requestVersion.current) setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        if (version === requestVersion.current) { setLoading(false); setRefreshing(false) }
       }
 
       prefetchIssuesData(currentProject.id)
     },
-    [currentProject, profile?.id],
+    [currentProject, user, lifecycle],
   )
 
   useEffect(() => {
@@ -166,17 +171,7 @@ function Dashboard() {
     year: 'numeric',
   }).format(new Date())
 
-  const totalIssues =
-    (stats?.open_issues ?? 0) +
-    (stats?.in_progress_issues ?? 0) +
-    (stats?.for_testing_issues ?? 0) +
-    (stats?.done_issues ?? 0)
-
-  const totalForBar = Math.max(totalIssues, 1)
-  const passedPct = Math.round(((stats?.passed_issues ?? 0) / totalForBar) * 100)
-  const failedPct = Math.round(((stats?.failed_issues ?? 0) / totalForBar) * 100)
-  const forTestingPct = Math.round(((stats?.for_testing_issues ?? 0) / totalForBar) * 100)
-  const inProgressPct = Math.round(((stats?.in_progress_issues ?? 0) / totalForBar) * 100)
+  const personalTasks = [...myTasks].sort((a, b) => workGroupOrder(a, user?.id ?? '', currentRole) - workGroupOrder(b, user?.id ?? '', currentRole))
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -238,146 +233,24 @@ function Dashboard() {
           ) : (
             <>
               <DeadlineOverview stats={stats} />
-              {/* Integrated Issue Progress Pipeline */}
-              <section
-                aria-label="Issue Progress"
-                className="mb-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-md lg:p-lg"
-              >
-                <div className="mb-md border-b border-outline-variant pb-md">
-                  <h2 className="text-headline-md font-semibold text-on-surface">
-                    Issue Progress
-                  </h2>
-                  <p className="text-body-md text-on-surface-variant">
-                    Track issues from reported to fixed and tested.
-                  </p>
-                </div>
-
-                {/* 4 Connected Stages */}
-                <div className="grid grid-cols-2 gap-sm sm:grid-cols-4 sm:gap-md">
-                  {/* Stage 1: Backlog */}
-                  <div className="flex flex-col rounded-md border border-outline-variant bg-surface-container-low p-md transition-colors hover:border-outline">
-                    <div className="flex items-center justify-between text-on-surface-variant">
-                      <span className="text-label-md font-semibold uppercase tracking-wider">
-                        1. Backlog
-                      </span>
-                      <CircleDot size={16} className="text-slate-400" />
-                    </div>
-                    <div className="mt-sm flex items-baseline gap-xs">
-                      <span className="font-mono text-headline-lg font-bold text-on-surface lg:text-headline-xl">
-                        {stats?.open_issues ?? 0}
-                      </span>
-                      <span className="text-body-md text-on-surface-variant">open</span>
-                    </div>
-                  </div>
-
-                  {/* Stage 2: In Dev */}
-                  <div className="flex flex-col rounded-md border border-outline-variant bg-surface-container-low p-md transition-colors hover:border-outline">
-                    <div className="flex items-center justify-between text-on-surface-variant">
-                      <span className="text-label-md font-semibold uppercase tracking-wider">
-                        2. In Dev
-                      </span>
-                      <PlayCircle size={16} className="text-sky-600" />
-                    </div>
-                    <div className="mt-sm flex items-baseline gap-xs">
-                      <span className="font-mono text-headline-lg font-bold text-on-surface lg:text-headline-xl">
-                        {stats?.in_progress_issues ?? 0}
-                      </span>
-                      <span className="text-body-md text-on-surface-variant">active</span>
-                    </div>
-                  </div>
-
-                  {/* Stage 3: For Testing */}
-                  <div className="flex flex-col rounded-md border border-outline-variant bg-surface-container-low p-md transition-colors hover:border-outline">
-                    <div className="flex items-center justify-between text-on-surface-variant">
-                      <span className="text-label-md font-semibold uppercase tracking-wider">
-                        3. For Testing
-                      </span>
-                      <FlaskConical size={16} className="text-primary" />
-                    </div>
-                    <div className="mt-sm flex items-baseline gap-xs">
-                      <span className="font-mono text-headline-lg font-bold text-on-surface lg:text-headline-xl">
-                        {stats?.for_testing_issues ?? 0}
-                      </span>
-                      <span className="text-body-md text-on-surface-variant">ready</span>
-                    </div>
-                  </div>
-
-                  {/* Stage 4: Completed */}
-                  <div className="flex flex-col rounded-md border border-outline-variant bg-surface-container-low p-md transition-colors hover:border-outline">
-                    <div className="flex items-center justify-between text-on-surface-variant">
-                      <span className="text-label-md font-semibold uppercase tracking-wider">
-                        4. Completed
-                      </span>
-                      <CheckCircle2 size={16} className="text-emerald-600" />
-                    </div>
-                    <div className="mt-sm flex items-baseline gap-xs">
-                      <span className="font-mono text-headline-lg font-bold text-on-surface lg:text-headline-xl">
-                        {stats?.done_issues ?? 0}
-                      </span>
-                      <span className="text-body-md text-on-surface-variant">done</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Segmented QA Distribution Meter */}
-                <div className="mt-md border-t border-outline-variant pt-sm">
-                  <div className="mb-xs flex items-center justify-between text-label-md text-on-surface-variant">
-                    <span className="font-semibold uppercase tracking-wider">
-                      Verification Meter
-                    </span>
-                    <span className="font-mono text-code-xs">
-                      {stats?.passed_issues ?? 0} Passed · {stats?.failed_issues ?? 0} Failed · {stats?.for_testing_issues ?? 0} Queued
-                    </span>
-                  </div>
-                  <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-container">
-                    {passedPct > 0 && (
-                      <div
-                        className="h-full bg-emerald-600 transition-all"
-                        style={{ width: `${passedPct}%` }}
-                        title={`Passed: ${stats?.passed_issues ?? 0} (${passedPct}%)`}
-                      />
-                    )}
-                    {failedPct > 0 && (
-                      <div
-                        className="h-full bg-rose-600 transition-all"
-                        style={{ width: `${failedPct}%` }}
-                        title={`Failed: ${stats?.failed_issues ?? 0} (${failedPct}%)`}
-                      />
-                    )}
-                    {forTestingPct > 0 && (
-                      <div
-                        className="h-full bg-indigo-600 transition-all"
-                        style={{ width: `${forTestingPct}%` }}
-                        title={`In QA: ${stats?.for_testing_issues ?? 0} (${forTestingPct}%)`}
-                      />
-                    )}
-                    {inProgressPct > 0 && (
-                      <div
-                        className="h-full bg-sky-500 transition-all"
-                        style={{ width: `${inProgressPct}%` }}
-                        title={`In Dev: ${stats?.in_progress_issues ?? 0} (${inProgressPct}%)`}
-                      />
-                    )}
-                  </div>
-                </div>
-              </section>
+              <IssueWorkOverview stats={stats} unassignedCount={unassignedCount} owner={currentRole === 'OWNER'} />
 
               {/* Two-Column Workbench Canvas */}
               <div className="grid grid-cols-1 gap-lg lg:grid-cols-12">
                 {/* Left Column: Verification Backlog & Recent Issues */}
                 <div className="flex flex-col lg:col-span-8 min-w-0">
                   <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
-                    <div className="flex items-center justify-between border-b border-outline-variant px-lg py-md">
-                      <div className="flex items-center gap-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant px-lg py-md">
+                      <div className="flex flex-wrap items-center gap-sm">
                         <h3 className="text-headline-md font-semibold text-on-surface">
-                          Verification Queue & Recent Issues
+                          Recent Issues
                         </h3>
                         <span className="rounded bg-surface-container px-sm py-[2px] font-mono text-code-xs font-semibold text-on-surface-variant">
                           {recentIssues.length} items
                         </span>
                       </div>
                       <Link
-                        to="/issues"
+                        to={`/issues?view=${lifecycle}`}
                         className="inline-flex items-center gap-xs text-body-md font-semibold text-primary hover:underline"
                       >
                         <span>View Full Backlog</span>
@@ -385,12 +258,13 @@ function Dashboard() {
                       </Link>
                     </div>
 
+                    <div className="px-lg pt-md"><IssueLifecycleTabs value={lifecycle} onChange={setLifecycle} /></div>
                     {recentIssues.length === 0 ? (
                       <div className="px-lg py-xl text-center">
                         <p className="text-body-lg text-on-surface-variant">
-                          No issues recorded in this project yet.
+                          {lifecycle === 'completed' ? 'No completed issues yet.' : lifecycle === 'active' ? 'No active issues. Completed history is available in Completed.' : 'No issues recorded in this project yet.'}
                         </p>
-                        {canReportIssues && <Link
+                        {canReportIssues && lifecycle !== 'completed' && <Link
                           to="/issues/new"
                           className="mt-sm inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container"
                         >
@@ -536,7 +410,7 @@ function Dashboard() {
                     <div className="flex items-center justify-between border-b border-outline-variant px-lg py-md">
                       <div className="flex items-center gap-xs">
                         <h3 className="text-headline-md font-semibold text-on-surface">
-                          Assigned to Me
+                          My Active Work
                         </h3>
                         <span className="rounded bg-surface-container px-sm py-[2px] font-mono text-code-xs font-semibold text-on-surface-variant">
                           {myTasks.length}
@@ -553,12 +427,12 @@ function Dashboard() {
                     {myTasks.length === 0 ? (
                       <div className="p-lg text-center">
                         <p className="text-body-md text-on-surface-variant">
-                          All assigned tasks cleared.
+                          No active assigned or reported issues.
                         </p>
                       </div>
                     ) : (
                       <div className="divide-y divide-outline-variant">
-                        {myTasks.slice(0, 5).map((task) => (
+                        {personalTasks.slice(0, 5).map((task) => (
                           <Link
                             key={task.id}
                             to={`/issues/${task.id}`}
@@ -575,6 +449,7 @@ function Dashboard() {
                                 <Clock size={12} />
                                 <span>{timeAgo(task.updated_at)}</span>
                               </div>
+                              <span className="text-label-md text-on-surface-variant">{workGroups.find((group) => group.key === workGroup(task, user?.id ?? '', currentRole))?.label}</span>
                             </div>
                             <ChevronRight
                               size={16}
@@ -603,7 +478,7 @@ function Dashboard() {
                     </h3>
                     <div className="flex flex-col gap-xs">
                       <Link
-                        to="/issues"
+                        to="/issues?view=active&status=FOR_TESTING"
                         className="flex items-center justify-between rounded-md p-sm text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-low"
                       >
                         <span className="flex items-center gap-sm">
