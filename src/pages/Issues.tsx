@@ -1,3 +1,7 @@
+import DeadlineSummary from '../components/DeadlineSummary'
+import DeadlineFilters from '../components/DeadlineFilters'
+import { useDeadlineDay } from '../hooks/useDeadlineDay'
+import type { DeadlineFilter } from '../lib/deadlines'
 import LoadError from '../components/LoadError'
 import {
   ChevronDown,
@@ -12,8 +16,8 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
@@ -98,6 +102,13 @@ function Issues() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { currentProject } = useProject()
+  const day = useDeadlineDay(currentProject?.timezone)
+  const previousDay = useRef(day)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedDeadline = searchParams.get('deadline')
+  const deadlineFilter: DeadlineFilter = requestedDeadline === 'overdue' || requestedDeadline === 'missed' ? requestedDeadline : ''
+  const [sortBy, setSortBy] = useState<'newest' | 'deadline'>('newest')
+
 
   const [issues, setIssues] = useState<IssueRow[]>([])
   const [members, setMembers] = useState<Member[]>([])
@@ -110,6 +121,13 @@ function Issues() {
   const [statusFilter, setStatusFilter] = useState<IssueStatus | ''>('')
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority | ''>('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
+  const setDeadlineFilter = (value: DeadlineFilter) => {
+    const params = new URLSearchParams(searchParams)
+    if (value) params.set('deadline', value)
+    else params.delete('deadline')
+    setSearchParams(params)
+    setPage(1)
+  }
 
   useEffect(() => {
     if (!currentProject) return
@@ -139,6 +157,8 @@ function Issues() {
         priorityFilter,
         assigneeFilter,
         search,
+        deadlineFilter,
+        sortBy,
       }
 
       const cacheKey = `issues:${currentProject.id}:${JSON.stringify({
@@ -148,6 +168,8 @@ function Issues() {
         priorityFilter: priorityFilter || '',
         assigneeFilter: assigneeFilter || '',
         search: search.trim(),
+        deadlineFilter,
+        sortBy,
       })}`
 
       const hasCached = !forceRefresh && Boolean(queryCache.get(cacheKey))
@@ -176,12 +198,14 @@ function Issues() {
         prefetchMyTasksData(currentProject.id, user.id)
       }
     },
-    [currentProject, user, page, statusFilter, priorityFilter, assigneeFilter, search],
+    [currentProject, user, page, statusFilter, priorityFilter, assigneeFilter, search, deadlineFilter, sortBy],
   )
 
   useEffect(() => {
-    loadIssues()
-  }, [loadIssues])
+    const crossedMidnight = previousDay.current !== day
+    previousDay.current = day
+    void loadIssues(crossedMidnight)
+  }, [loadIssues, day])
 
   useRealtimeSync({
     projectId: currentProject?.id,
@@ -194,10 +218,11 @@ function Issues() {
     setStatusFilter('')
     setPriorityFilter('')
     setAssigneeFilter('')
+    setDeadlineFilter('')
     setPage(1)
   }
 
-  const hasFilters = Boolean(search || statusFilter || priorityFilter || assigneeFilter)
+  const hasFilters = Boolean(search || statusFilter || priorityFilter || assigneeFilter || deadlineFilter)
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
   const rangeStart = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
   const rangeEnd = Math.min(page * PAGE_SIZE, totalCount)
@@ -216,6 +241,7 @@ function Issues() {
 
         <main className="flex-1 px-md py-md lg:px-lg lg:py-lg">
           <LoadError message={loadError} onRetry={() => void loadIssues(true)} />
+          <DeadlineFilters filter={deadlineFilter} onChange={setDeadlineFilter} sort={sortBy} onSort={(value) => { setSortBy(value); setPage(1) }} />
           {/* Header Bar */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -470,6 +496,7 @@ function Issues() {
                       <tr className="border-b border-outline-variant bg-surface-container-low text-label-md font-semibold uppercase tracking-wider text-on-surface-variant">
                         <th className="px-lg py-sm">ID</th>
                         <th className="px-lg py-sm">Summary</th>
+                        <th className="px-lg py-sm">Deadline</th>
                         <th className="px-lg py-sm">Status</th>
                         <th className="px-lg py-sm">Priority</th>
                         <th className="px-lg py-sm">Assignee</th>
@@ -503,6 +530,7 @@ function Issues() {
                                 {currentProject?.key}-{issue.issue_number}
                               </span>
                             </td>
+                            <td className="min-w-[210px] px-lg py-md"><DeadlineSummary issue={issue} compact /></td>
                             <td className="max-w-[340px] px-lg py-md">
                               <span
                                 className={`block truncate text-body-md font-medium ${

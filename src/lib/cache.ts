@@ -8,7 +8,9 @@ import type {
   ProjectDashboardStats,
   ProjectInvitation,
   ProjectRole,
+  IssueDeadlines,
 } from './database.types'
+import type { DeadlineFilter } from './deadlines'
 
 import { MemoryCache } from './memoryCache'
 
@@ -132,7 +134,7 @@ export async function fetchDashboardData(
 export type IssueListItem = Pick<
   Issue,
   'id' | 'issue_number' | 'title' | 'priority' | 'status' | 'created_at' | 'reporter_id' | 'assignee_id'
-> & {
+> & IssueDeadlines & {
   assignee: { full_name: string | null; avatar_url: string | null } | null
   reporter: { full_name: string | null } | null
 }
@@ -144,6 +146,8 @@ export type IssueQueryParams = {
   priorityFilter?: IssuePriority | ''
   assigneeFilter?: string
   search?: string
+  deadlineFilter?: DeadlineFilter
+  sortBy?: 'newest' | 'deadline'
 }
 
 export type IssuesResponse = {
@@ -165,6 +169,8 @@ export async function fetchIssuesData(
     priorityFilter: params.priorityFilter || '',
     assigneeFilter: params.assigneeFilter || '',
     search: params.search?.trim() || '',
+    deadlineFilter: params.deadlineFilter || '',
+    sortBy: params.sortBy || 'newest',
   }
 
   const scopeVersion = queryCache.scopeVersion
@@ -176,9 +182,9 @@ export async function fetchIssuesData(
   }
 
   let query = supabase
-    .from('issues')
+    .from('v_issue_deadlines')
     .select(
-      'id, issue_number, title, priority, status, created_at, reporter_id, assignee_id, assignee:profiles!issues_assignee_id_fkey(full_name, avatar_url), reporter:profiles!issues_reporter_id_fkey(full_name)',
+      '*, assignee:profiles!issues_assignee_id_fkey(full_name, avatar_url), reporter:profiles!issues_reporter_id_fkey(full_name)',
       { count: 'exact' },
     )
     .eq('project_id', projectId)
@@ -195,6 +201,9 @@ export async function fetchIssuesData(
   if (normalizedParams.search) {
     query = query.ilike('title', `%${normalizedParams.search}%`)
   }
+  if (normalizedParams.deadlineFilter === 'overdue') query = query.eq('is_overdue', true)
+  if (normalizedParams.deadlineFilter === 'missed') query = query.eq('has_missed_target', true).neq('status', 'DONE')
+  if (normalizedParams.sortBy === 'deadline') query = query.order('resolution_sort_date', { ascending: true, nullsFirst: false })
 
   const { data, count, error } = await query
     .order('issue_number', { ascending: false })
@@ -220,7 +229,7 @@ export function prefetchIssuesData(projectId: string): void {
 // 3. My Tasks Cache, Fetcher & Prefetcher
 // ---------------------------------------------------------------------------
 
-export type MyTasksItem = Pick<
+export type MyTasksItem = IssueDeadlines & Pick<
   Issue,
   | 'id'
   | 'issue_number'
@@ -248,10 +257,8 @@ export async function fetchMyTasksData(
   }
 
   let query = supabase
-    .from('issues')
-    .select(
-      'id, issue_number, title, priority, status, updated_at, created_at, assignee_id, reporter_id',
-    )
+    .from('v_issue_deadlines')
+    .select('*')
     .eq('project_id', projectId)
 
   if (tab === 'assigned') {

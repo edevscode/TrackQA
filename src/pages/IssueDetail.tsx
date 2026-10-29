@@ -1,3 +1,8 @@
+import DeadlineFields from '../components/DeadlineFields'
+import DeadlineSummary from '../components/DeadlineSummary'
+import DeadlineHistoryPanel from '../components/DeadlineHistoryPanel'
+import { deadlineInput, deadlinePayload, validateDeadlines, emptyDeadlines } from '../lib/deadlines'
+import type { DeadlineHistory } from '../lib/database.types'
 import { uploadFiles } from '../lib/uploadBatch'
 import LoadError from '../components/LoadError'
 import { useDialogFocus } from '../hooks/useDialogFocus'
@@ -184,6 +189,8 @@ function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
+  const [editDeadlines, setEditDeadlines] = useState({ ...emptyDeadlines })
+  const [deadlineHistory, setDeadlineHistory] = useState<DeadlineHistory[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [pendingEvidence, setPendingEvidence] = useState<{ files: File[]; verificationId?: string }[]>(() => {
     const files = (location.state as { failedAttachments?: File[] } | null)?.failedAttachments
@@ -295,7 +302,7 @@ function IssueDetail() {
         setCurrentProjectId(projectData.id)
       }
 
-      const [commentsRes, activityRes, attachmentsRes] = await Promise.all([
+      const [commentsRes, activityRes, attachmentsRes, historyRes] = await Promise.all([
         supabase
           .from('issue_comments')
           .select(
@@ -314,10 +321,12 @@ function IssueDetail() {
           .select('*, uploader:profiles!issue_attachments_uploaded_by_fkey(full_name)')
           .eq('issue_id', issueId)
           .order('created_at', { ascending: false }),
+        supabase.from('issue_deadline_history').select('*').eq('issue_id', issueId).order('created_at', { ascending: false }).limit(100),
       ])
-      for (const response of [commentsRes, activityRes, attachmentsRes]) {
+      for (const response of [commentsRes, activityRes, attachmentsRes, historyRes]) {
         if (response.error) throw response.error
       }
+      setDeadlineHistory(historyRes.data ?? [])
       setComments((commentsRes.data as unknown as TimelineComment[]) ?? [])
       setActivity((activityRes.data as unknown as TimelineActivity[]) ?? [])
       setAttachments(await resolveAttachmentUrls((attachmentsRes.data as unknown as AttachmentRow[]) ?? []))
@@ -493,6 +502,7 @@ function IssueDetail() {
 
   const openEditModal = () => {
     if (!issue) return
+    setEditDeadlines(deadlineInput(issue))
     setEditTitle(issue.title)
     setEditPriority(issue.priority)
     setEditAssigneeId(issue.assignee_id ?? '')
@@ -510,12 +520,15 @@ function IssueDetail() {
   const handleSaveEdit = async (e: FormEvent) => {
     e.preventDefault()
     if (!issue || !editTitle.trim()) return
+    const deadlineError = validateDeadlines(editDeadlines)
+    if (deadlineError) { setEditError(deadlineError); return }
     setSavingEdit(true)
     setEditError(null)
 
     const { error } = await supabase
       .from('issues')
       .update({
+        ...deadlinePayload(editDeadlines),
         title: editTitle.trim(),
         priority: editPriority,
         assignee_id: editAssigneeId || null,
@@ -770,6 +783,9 @@ function IssueDetail() {
               )}
             </div>
           </div>
+
+          <DeadlineSummary issue={issue} />
+          <DeadlineHistoryPanel entries={deadlineHistory} members={members} />
 
           {/* Precision Lab QA Workflow Stepper */}
           <div className="mb-md overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest">
@@ -1672,6 +1688,7 @@ function IssueDetail() {
             </div>
 
             <form onSubmit={handleSaveEdit} className="flex flex-1 flex-col overflow-hidden">
+                <DeadlineFields prefix="edit" value={editDeadlines} onChange={setEditDeadlines} timezone={activeProject?.timezone ?? issue.deadline_timezone} disabled={savingEdit} />
               <div className="flex-1 overflow-y-auto p-md space-y-md">
                 {editError && (
                   <p className="rounded border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">

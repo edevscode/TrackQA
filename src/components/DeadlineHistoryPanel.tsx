@@ -1,0 +1,36 @@
+import type { DeadlineHistory } from '../lib/database.types'
+import { deadlineKeys, deadlineLabels, formatDeadline } from '../lib/deadlines'
+
+const labels = { CREATED: 'Issue created', TARGETS_CHANGED: 'Targets changed', MILESTONE_REACHED: 'Milestone recorded', REWORK_STARTED: 'Development resumed' }
+
+export default function DeadlineHistoryPanel({ entries, members }: { entries: DeadlineHistory[]; members: { user_id: string; full_name: string | null }[] }) {
+  if (!entries.length) return null
+  return (
+    <details className="mb-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+      <summary className="cursor-pointer text-label-md font-semibold">Deadline and milestone history ({entries.length}{entries.length === 100 ? ' most recent' : ''})</summary>
+      <ol className="mt-sm space-y-sm">
+        {entries.map((entry) => {
+          const actor = members.find((member) => member.user_id === entry.actor_id)?.full_name ?? (entry.actor_id ? `Member ${entry.actor_id.slice(0, 8)}` : 'System')
+          const after = entry.after_values
+          return (
+            <li key={entry.id} className="rounded border border-outline-variant p-sm text-body-md">
+              <p className="font-semibold">{labels[entry.event]} · cycle {entry.work_cycle} · {after.status}</p>
+              <p className="text-on-surface-variant">{actor} · {new Date(entry.created_at).toLocaleString('en-US', { timeZone: after.timezone })} ({after.timezone})</p>
+              <dl className="mt-xs grid gap-xs sm:grid-cols-2">
+                {deadlineKeys.map((key) => {
+                  const before = entry.before_values?.[key]
+                  const target = after[key]
+                  const changed = before !== undefined && before !== target
+                  return <div key={key}><dt className="inline font-medium">{deadlineLabels[key]}: </dt><dd className="inline">{changed && <span>{before ? formatDeadline(before) : 'Not scheduled'} → </span>}{target ? formatDeadline(target) : 'Not scheduled'}</dd></div>
+                })}
+              </dl>
+              {entry.event === 'REWORK_STARTED' && entry.before_values?.qa_decided_at && (
+                <p className="mt-xs text-on-surface-variant">Previous cycle QA: {entry.before_values.status} at {new Date(entry.before_values.qa_decided_at).toLocaleString('en-US', { timeZone: after.timezone })}. Earlier targets and results remain in this history.</p>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </details>
+  )
+}

@@ -1,3 +1,7 @@
+import DeadlineSummary from '../components/DeadlineSummary'
+import DeadlineFilters from '../components/DeadlineFilters'
+import { deadlineState, compareResolutionDates, type DeadlineFilter } from '../lib/deadlines'
+import { useDeadlineDay } from '../hooks/useDeadlineDay'
 import LoadError from '../components/LoadError'
 import {
   ArrowUpDown,
@@ -52,6 +56,7 @@ const priorityOptions: {
 ]
 
 type SortOption =
+  | 'deadline_asc'
   | 'updated_desc'
   | 'updated_asc'
   | 'number_desc'
@@ -59,6 +64,7 @@ type SortOption =
   | 'priority_desc'
 
 const sortOptions: { value: SortOption; label: string }[] = [
+  { value: 'deadline_asc', label: 'Nearest resolution deadline' },
   { value: 'updated_desc', label: 'Recently Updated' },
   { value: 'updated_asc', label: 'Oldest Updated' },
   { value: 'number_desc', label: 'Issue # (Highest)' },
@@ -157,6 +163,8 @@ function MyTasks() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { user } = useAuth()
   const { currentProject } = useProject()
+  const day = useDeadlineDay(currentProject?.timezone)
+  const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>('')
 
   const [tab, setTab] = useState<'assigned' | 'reported'>('assigned')
   const [tasks, setTasks] = useState<TaskRow[]>([])
@@ -225,7 +233,7 @@ function MyTasks() {
 
   useEffect(() => {
     loadTasks()
-  }, [loadTasks])
+  }, [loadTasks, day])
 
   useRealtimeSync({
     projectId: currentProject?.id,
@@ -255,8 +263,15 @@ function MyTasks() {
       list = list.filter((t) => t.priority === priorityFilter)
     }
 
+    if (deadlineFilter) {
+      list = list.filter((task) => {
+        const state = deadlineState(task, day)
+        return deadlineFilter === 'overdue' ? state.overdue : task.status !== 'DONE' && state.missedStage
+      })
+    }
     list.sort((a, b) => {
       switch (sortBy) {
+        case 'deadline_asc': return compareResolutionDates(a, b) || b.issue_number - a.issue_number
         case 'updated_asc':
           return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
         case 'number_desc':
@@ -272,15 +287,16 @@ function MyTasks() {
     })
 
     return list
-  }, [tasks, searchQuery, statusFilter, priorityFilter, sortBy, currentProject?.key])
+  }, [tasks, searchQuery, statusFilter, priorityFilter, sortBy, currentProject?.key, deadlineFilter, day])
 
   const hasActiveFilters =
-    Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter)
+    Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter) || Boolean(deadlineFilter)
 
   const clearFilters = () => {
     setSearchQuery('')
     setStatusFilter('')
     setPriorityFilter('')
+    setDeadlineFilter('')
   }
 
   const selectedStatusLabel =
@@ -299,6 +315,7 @@ function MyTasks() {
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
           <LoadError message={loadError} onRetry={() => void loadTasks(true)} />
+          <DeadlineFilters filter={deadlineFilter} onChange={setDeadlineFilter} />
           {/* Header & Filter Controls */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -639,6 +656,7 @@ function MyTasks() {
                       <h2 className="mt-xs line-clamp-2 text-body-lg font-semibold text-on-surface group-hover:text-primary transition-colors">
                         {task.title}
                       </h2>
+                      <DeadlineSummary issue={task} compact />
                     </div>
 
                     <div className="mt-md flex items-center justify-between border-t border-outline-variant pt-xs">

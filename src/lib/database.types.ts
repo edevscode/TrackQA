@@ -33,6 +33,7 @@ export type Profile = {
 }
 
 export type Project = {
+  timezone: string
   id: string
   name: string
   key: string
@@ -66,7 +67,36 @@ export type ProjectInvitation = {
   expires_at: string
 }
 
-export type Issue = {
+export type IssueDeadlines = {
+  resolve_by: string | null
+  start_by: string | null
+  ready_for_qa_by: string | null
+  qa_decision_by: string | null
+  deadline_timezone: string
+  work_cycle: number
+  work_started_at: string | null
+  ready_for_qa_at: string | null
+  qa_decided_at: string | null
+  completed_at: string | null
+}
+
+export type DeadlineSnapshot = Omit<IssueDeadlines, 'deadline_timezone'> & {
+  timezone: string
+  status: IssueStatus
+}
+
+export type DeadlineHistory = {
+  id: string
+  issue_id: string
+  actor_id: string | null
+  event: 'CREATED' | 'TARGETS_CHANGED' | 'MILESTONE_REACHED' | 'REWORK_STARTED'
+  work_cycle: number
+  before_values: DeadlineSnapshot | null
+  after_values: DeadlineSnapshot
+  created_at: string
+}
+
+export type Issue = IssueDeadlines & {
   id: string
   project_id: string
   issue_number: number
@@ -160,6 +190,8 @@ export type NotificationPreferences = {
 }
 
 export type ProjectDashboardStats = {
+  overdue_issues: number
+  missed_target_issues: number
   project_id: string
   open_issues: number
   in_progress_issues: number
@@ -189,6 +221,12 @@ export type MemberStats = {
 export type Database = {
   public: {
     Tables: {
+      issue_deadline_history: {
+        Row: DeadlineHistory
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
       profiles: {
         Row: Profile
         Insert: Partial<Profile> & { id: string; email: string }
@@ -427,6 +465,10 @@ export type Database = {
       }
     }
     Views: {
+      v_issue_deadlines: {
+        Row: Issue & { is_overdue: boolean; has_missed_target: boolean; completed_late: boolean | null; resolution_sort_date: string | null }
+        Relationships: Database['public']['Tables']['issues']['Relationships']
+      }
       v_project_dashboard_stats: { Row: ProjectDashboardStats; Relationships: [] }
       v_member_stats: { Row: MemberStats; Relationships: [] }
     }

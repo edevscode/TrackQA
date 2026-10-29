@@ -1,3 +1,5 @@
+import DeadlineFields from '../components/DeadlineFields'
+import { deadlineInput, deadlinePayload, validateDeadlines } from '../lib/deadlines'
 import { uploadFiles } from '../lib/uploadBatch'
 import { saveIssueAttachment } from '../lib/attachments'
 import {
@@ -78,6 +80,7 @@ function CreateIssue() {
   const { currentProject } = useProject()
 
   const draft = getIssueDraft()
+  const [deadlines, setDeadlines] = useState(() => deadlineInput(draft))
 
   const [members, setMembers] = useState<Member[]>([])
   const [title, setTitle] = useState(draft.title ?? '')
@@ -99,6 +102,7 @@ function CreateIssue() {
 
   useEffect(() => {
     setIssueDraft({
+      ...deadlines,
       title,
       description,
       steps,
@@ -110,7 +114,7 @@ function CreateIssue() {
       browser,
       appVersion,
     })
-  }, [title, description, steps, expected, actual, priority, assigneeId, device, browser, appVersion])
+  }, [title, description, steps, expected, actual, priority, assigneeId, device, browser, appVersion, deadlines])
 
   useEffect(() => {
     if (!currentProject) return
@@ -155,12 +159,15 @@ function CreateIssue() {
     e.preventDefault()
     if (!currentProject || !user) return
 
+    const deadlineError = validateDeadlines(deadlines)
+    if (deadlineError) { setError(deadlineError); return }
     setSubmitting(true)
     setError(null)
 
     const { data, error: insertError } = await supabase
       .from('issues')
       .insert({
+        ...deadlinePayload(deadlines),
         project_id: currentProject.id,
         title,
         description: description || null,
@@ -247,6 +254,7 @@ function CreateIssue() {
           <form id="issue-form" onSubmit={handleSubmit} className="grid grid-cols-1 gap-lg lg:grid-cols-12">
             {/* Left Column: Issue Blueprint & Repro (lg:col-span-8) */}
             <div className="flex flex-col gap-lg lg:col-span-8">
+              <DeadlineFields prefix="create" value={deadlines} onChange={setDeadlines} timezone={currentProject?.timezone ?? 'Asia/Manila'} disabled={submitting} />
               {/* Issue Summary */}
               <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
                 <div className="border-b border-outline-variant px-lg py-sm text-headline-md font-semibold text-on-surface">

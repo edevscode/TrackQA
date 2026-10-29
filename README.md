@@ -49,6 +49,26 @@ Run `npm run dev` to start the frontend.
 
 ## Existing deployments
 
+For the deadline release, apply **0028_issue_deadlines.sql** after 0027 and
+before deploying this frontend. It adds optional resolution/stage targets,
+project timezone, workflow-managed milestone timestamps, and append-only history.
+Existing issues start unscheduled; old milestone timestamps remain unknown.
+
+Set the project's deadline timezone in Project Settings before assigning targets.
+Existing projects default to `Asia/Manila`. The timezone is locked while any issue
+has targets, so changing settings cannot silently shift a delivery commitment.
+Every supplied date must follow milestone order; gaps and same-day targets are
+allowed. All dates run through the end of their day in the project timezone.
+
+Owners and original reporters can set, clear, or reschedule dates before Done.
+Developers keep their status transitions but cannot alter targets or measured
+timestamps. A QA pass or fail records the QA decision milestone. Resuming a failed
+issue increments its work cycle and clears only the current cycle's milestone
+measurements; all targets stay unchanged and previous snapshots remain in history.
+Dates never automatically change status or priority. Reminders are not part of
+this release. Deadline history is visible to project members and follows existing
+issue deletion behavior (history is deleted with its issue).
+
 Apply migrations **0023–0027 before deploying the updated frontend**. These fix
 invitation escalation, issue identity/content permissions, atomic QA, profile
 visibility, owner deletion, and private evidence storage.
@@ -78,7 +98,12 @@ npm run build
 ```
 
 Node tests cover account isolation, late cache responses, cache expiry/invalidation,
-and partial upload retries. TypeScript strict mode is enabled. If Windows process
+partial upload retries, date ordering, timezone boundaries, and deadline indicators.
+They also run all application migrations and SQL regressions in embedded PostgreSQL
+using PGlite (development-only). Minimal test schemas represent Supabase Auth and
+Storage; actual HTTP auth, uploads, and Realtime still need a deployed smoke test.
+PGlite uses one connection, so these tests do not simulate competing transactions.
+TypeScript strict mode is enabled. If Windows process
 restrictions prevent Vite's default config bundling, validate with:
 
 ```sh
@@ -93,6 +118,7 @@ all migrations. Every script rolls its fixtures back. With `psql`:
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/invitation_permissions.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_update_permissions.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/privacy_storage_and_deletion.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_deadlines.sql
 ```
 
 Browser checks: tab through each modal, close with Escape, and confirm focus returns

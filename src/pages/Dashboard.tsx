@@ -1,3 +1,4 @@
+import { useDeadlineDay } from '../hooks/useDeadlineDay'
 import LoadError from '../components/LoadError'
 import {
   ArrowRight,
@@ -17,7 +18,7 @@ import {
   Settings,
   Users,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Sidebar from '../components/Sidebar'
@@ -102,6 +103,8 @@ function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { profile } = useAuth()
   const { currentProject } = useProject()
+  const day = useDeadlineDay(currentProject?.timezone)
+  const previousDay = useRef(day)
 
   const [stats, setStats] = useState<ProjectDashboardStats | null>(null)
   const [recentIssues, setRecentIssues] = useState<RecentIssue[]>([])
@@ -145,8 +148,10 @@ function Dashboard() {
   )
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    const crossedMidnight = previousDay.current !== day
+    previousDay.current = day
+    void loadData(crossedMidnight)
+  }, [loadData, day])
 
   useRealtimeSync({
     projectId: currentProject?.id,
@@ -231,6 +236,18 @@ function Dashboard() {
             </div>
           ) : (
             <>
+              <section aria-label="Deadline overview" className="mb-md grid gap-sm sm:grid-cols-2">
+                <Link to="/issues?deadline=overdue" className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary focus-visible:outline-2">
+                  <span className="block text-label-md font-semibold">Resolution overdue</span>
+                  <strong className="text-headline-xl">{stats?.overdue_issues ?? 0}</strong>
+                  <span className="ml-sm text-body-md text-on-surface-variant">Unresolved issues past their final deadline</span>
+                </Link>
+                <Link to="/issues?deadline=missed" className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary focus-visible:outline-2">
+                  <span className="block text-label-md font-semibold">Missed stage targets</span>
+                  <strong className="text-headline-xl">{stats?.missed_target_issues ?? 0}</strong>
+                  <span className="ml-sm text-body-md text-on-surface-variant">Active issues with a pending or late milestone</span>
+                </Link>
+              </section>
               {/* Integrated Issue Progress Pipeline */}
               <section
                 aria-label="Issue Progress"
