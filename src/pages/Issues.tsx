@@ -1,6 +1,5 @@
 import DeadlineSummary from '../components/DeadlineSummary'
-import DeadlineFilters from '../components/DeadlineFilters'
-import IssueLifecycleTabs from '../components/IssueLifecycleTabs'
+import IssueListControls, { FilterSelect } from '../components/IssueListControls'
 import { issueLifecycle, matchesLifecycle, type IssueLifecycle } from '../lib/issueWork'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import type { DeadlineFilter, DeadlineSort } from '../lib/deadlines'
@@ -12,11 +11,8 @@ import {
   ChevronsUp,
   ChevronUp,
   Equal,
-  ListFilter,
   Plus,
   RefreshCw,
-  Search,
-  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -259,7 +255,7 @@ function Issues() {
     setSearch('')
     setPriorityFilter('')
     const params = new URLSearchParams(searchParams)
-    for (const key of ['status', 'assignee', 'deadline']) params.delete(key)
+    for (const key of ['status', 'assignee', 'deadline', 'order']) params.delete(key)
     setSearchParams(params)
     setPage(1)
   }
@@ -324,123 +320,35 @@ function Issues() {
             </div>
           </div>
 
-          <IssueLifecycleTabs value={lifecycle} onChange={setLifecycle} />
-          {lifecycle !== 'completed' && <DeadlineFilters filter={deadlineFilter} onChange={setDeadlineFilter} sort={sortBy} onSort={setSortBy} />}
-          {/* Integrated Workbench Filter Bar */}
-          <div className="mb-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
-            <div className="flex flex-wrap items-center gap-sm">
-              {/* Search Box */}
-              <div className="flex min-w-[240px] flex-1 items-center gap-sm rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all">
-                <Search className="text-outline shrink-0" size={16} />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value)
-                    setPage(1)
-                  }}
-                  placeholder="Filter by issue title or keyword..."
-                  className="flex-1 bg-transparent text-body-md text-on-surface outline-none placeholder:text-outline"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearch('')
-                      setPage(1)
-                    }}
-                    title="Clear search"
-                    aria-label="Clear search"
-                    className="text-outline hover:text-on-surface"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {/* Status Select */}
-              <div className="relative">
-                <select
-                  aria-label="Issue status"
-                  value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value as IssueStatus | '')
-                    setPage(1)
-                  }}
-                  className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-xs pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low transition-colors"
-                >
-                  <option value="">All Statuses</option>
-                  {(Object.keys(statusConfig) as IssueStatus[]).filter((status) => matchesLifecycle(status, lifecycle)).map((s) => (
-                    <option key={s} value={s}>
-                      {statusConfig[s].label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="pointer-events-none absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant"
-                  size={14}
-                />
-              </div>
-
-              {/* Priority Select */}
-              <div className="relative">
-                <select
-                  value={priorityFilter}
-                  onChange={(e) => {
-                    setPriorityFilter(e.target.value as IssuePriority | '')
-                    setPage(1)
-                  }}
-                  className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-xs pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low transition-colors"
-                >
-                  <option value="">All Priorities</option>
-                  {(Object.keys(priorityConfig) as IssuePriority[]).map((p) => (
-                    <option key={p} value={p}>
-                      {priorityConfig[p].label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="pointer-events-none absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant"
-                  size={14}
-                />
-              </div>
-
-              {/* Assignee Select */}
-              <div className="relative">
-                <select
-                  value={assigneeFilter}
-                  onChange={(e) => {
-                    setAssigneeFilter(e.target.value)
-                    setPage(1)
-                  }}
-                  className="appearance-none rounded-md border border-outline-variant bg-surface-container-lowest py-xs pl-md pr-xl text-body-md font-medium text-on-surface hover:bg-surface-container-low transition-colors"
-                >
-                  <option value="">All Assignees</option>
-                  <option value="unassigned">Unassigned</option>
-                  {members.map((m) => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.full_name ?? 'Unnamed'}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="pointer-events-none absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant"
-                  size={14}
-                />
-              </div>
-
-              {hasFilters && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="inline-flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-low px-md py-xs text-body-md font-semibold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
-                >
-                  <ListFilter size={14} />
-                  <span>Reset Filters</span>
-                </button>
-              )}
-            </div>
-          </div>
+          <IssueListControls lifecycle={lifecycle} onLifecycleChange={setLifecycle} search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }}
+            filterCount={[statusFilter, priorityFilter, assigneeFilter, deadlineFilter].filter(Boolean).length}
+            summary={[
+              statusFilter ? statusConfig[statusFilter].label : '',
+              priorityFilter ? `${priorityConfig[priorityFilter].label} priority` : '',
+              assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter ? `Assigned to ${members.find((member) => member.user_id === assigneeFilter)?.full_name ?? 'selected member'}` : '',
+              deadlineFilter === 'upcoming' ? 'Due soon' : deadlineFilter === 'overdue' ? 'Resolution overdue' : deadlineFilter === 'missed' ? 'Missed stage targets' : '',
+            ].filter(Boolean).join(' / ')} hasFilters={hasFilters} onClear={clearFilters}>
+            {lifecycle !== 'completed' && <FilterSelect label="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as IssueStatus | '')}>
+              <option value="">Any status</option>
+              {(Object.keys(statusConfig) as IssueStatus[]).filter((status) => matchesLifecycle(status, lifecycle)).map((status) => <option key={status} value={status}>{statusConfig[status].label}</option>)}
+            </FilterSelect>}
+            <FilterSelect label="Priority" value={priorityFilter} onChange={(value) => { setPriorityFilter(value as IssuePriority | ''); setPage(1) }}>
+              <option value="">Any priority</option>
+              {(Object.keys(priorityConfig) as IssuePriority[]).map((priority) => <option key={priority} value={priority}>{priorityConfig[priority].label}</option>)}
+            </FilterSelect>
+            <FilterSelect label="Assignee" value={assigneeFilter} onChange={setAssigneeFilter}>
+              <option value="">Anyone</option><option value="unassigned">Unassigned</option>
+              {members.map((member) => <option key={member.user_id} value={member.user_id}>{member.full_name ?? 'Unnamed'}</option>)}
+            </FilterSelect>
+            {lifecycle !== 'completed' && <>
+              <FilterSelect label="Deadline" value={deadlineFilter} onChange={(value) => setDeadlineFilter(value as DeadlineFilter)}>
+                <option value="">Any deadline</option><option value="upcoming">Due soon (next 7 days)</option><option value="overdue">Resolution overdue</option><option value="missed">Missed stage targets</option>
+              </FilterSelect>
+              <FilterSelect label="Sort by" value={sortBy} onChange={(value) => setSortBy(value as DeadlineSort)}>
+                <option value="newest">Newest first</option><option value="next">Nearest pending deadline</option><option value="deadline">Nearest resolution deadline</option>
+              </FilterSelect>
+            </>}
+          </IssueListControls>
 
           {/* Table Container */}
           <div className="rounded-lg border border-outline-variant bg-surface-container-lowest overflow-hidden">
@@ -455,24 +363,6 @@ function Issues() {
                     ? 'No issues match the selected filter criteria.'
                     : lifecycle === 'active' ? 'No active issues. Completed history is available in Completed.' : lifecycle === 'completed' ? 'No completed issues yet. Passed issues stay Active until closed.' : 'No issues logged for this project yet.'}
                 </p>
-                {hasFilters ? (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="mt-sm inline-flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-md py-xs text-body-md font-semibold text-primary hover:bg-surface-container transition-colors"
-                  >
-                    Clear Filters
-                  </button>
-                ) : canReportIssues && lifecycle !== 'completed' ? (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/issues/new')}
-                    className="mt-sm inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
-                  >
-                    <Plus size={16} />
-                    <span>Report First Issue</span>
-                  </button>
-                ) : null}
               </div>
             ) : (
               <>

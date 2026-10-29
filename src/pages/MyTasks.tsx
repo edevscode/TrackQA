@@ -1,21 +1,15 @@
 import DeadlineSummary from '../components/DeadlineSummary'
-import DeadlineFilters from '../components/DeadlineFilters'
-import IssueLifecycleTabs from '../components/IssueLifecycleTabs'
+import IssueListControls, { FilterSelect } from '../components/IssueListControls'
 import { issueLifecycle, matchesLifecycle, workGroup, workGroupOrder, workGroups, type IssueLifecycle } from '../lib/issueWork'
 import { deadlineState, compareResolutionDates, comparePendingDeadlines, type DeadlineFilter } from '../lib/deadlines'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
-  ArrowUpDown,
-  Check,
   ChevronDown,
   ChevronUp,
   ChevronsUp,
   Clock,
   Equal,
-  ListFilter,
-  Search,
-  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -198,32 +192,6 @@ function MyTasks() {
     setPage(1)
   }
 
-  // Menu open dropdown state
-  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
-  const [priorityMenuOpen, setPriorityMenuOpen] = useState(false)
-  const [sortMenuOpen, setSortMenuOpen] = useState(false)
-
-  const statusRef = useRef<HTMLDivElement>(null)
-  const priorityRef = useRef<HTMLDivElement>(null)
-  const sortRef = useRef<HTMLDivElement>(null)
-
-  // Handle outside clicks to close dropdown menus
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
-        setStatusMenuOpen(false)
-      }
-      if (priorityRef.current && !priorityRef.current.contains(e.target as Node)) {
-        setPriorityMenuOpen(false)
-      }
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
-        setSortMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
   const loadTasks = useCallback(
     async (forceRefresh = false) => {
       if (!currentProject || !user) return
@@ -327,21 +295,21 @@ function MyTasks() {
   })).filter((group) => group.tasks.length)
 
   const hasActiveFilters =
-    Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter) || Boolean(deadlineFilter)
+    Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter) || Boolean(deadlineFilter) || tab !== 'mine'
 
   const clearFilters = () => {
     setSearchQuery('')
     setStatusFilter('')
     setPriorityFilter('')
     setDeadlineFilter('')
+    setTab('mine')
+    setSortBy('updated_desc')
   }
 
   const selectedStatusLabel =
     statusOptions.find((o) => o.value === statusFilter)?.label || 'Status'
   const selectedPriorityLabel =
     priorityOptions.find((o) => o.value === priorityFilter)?.label || 'Priority'
-  const selectedSortLabel =
-    sortOptions.find((o) => o.value === sortBy)?.label || 'Sort'
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -364,281 +332,36 @@ function MyTasks() {
                 </h1>
               </div>
               <p className="mt-xs text-body-md text-on-surface-variant">
-                Current responsibilities and completed history for this project. Passed issues remain active until closed.
+                Your current work and completed history.
               </p>
             </div>
 
-            {/* Filter and Sort Dropdowns */}
-            <div className="flex flex-wrap items-center gap-xs sm:gap-sm">
-              {/* Search Bar */}
-              <div className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-body-md focus-within:border-primary transition-colors">
-                <Search size={15} className="text-outline" />
-                <input
-                  type="text"
-                  placeholder="Search queue…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-32 bg-transparent text-body-md text-on-surface outline-none placeholder:text-outline sm:w-44"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    title="Clear search"
-                    aria-label="Clear search"
-                    className="text-outline hover:text-on-surface"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {/* Status Filter Dropdown */}
-              <div className="relative" ref={statusRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatusMenuOpen((v) => !v)
-                    setPriorityMenuOpen(false)
-                    setSortMenuOpen(false)
-                  }}
-                  className={`flex items-center gap-xs rounded-md border px-sm py-xs text-label-md font-semibold transition-colors ${
-                    statusFilter
-                      ? 'border-primary bg-primary-fixed/40 text-primary'
-                      : 'border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container'
-                  }`}
-                >
-                  <ListFilter size={15} />
-                  <span>
-                    {statusFilter ? `Status: ${selectedStatusLabel}` : 'Status'}
-                  </span>
-                  <ChevronDown size={13} className="opacity-70" />
-                </button>
-
-                {statusMenuOpen && (
-                  <div className="absolute right-0 z-20 mt-xs w-48 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm">
-                    <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
-                      Filter Status
-                    </div>
-                    {statusOptions.filter((option) => !option.value || matchesLifecycle(option.value, lifecycle)).map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          setStatusFilter(opt.value)
-                          setStatusMenuOpen(false)
-                        }}
-                        className={`flex w-full items-center justify-between px-sm py-xs text-body-md transition-colors ${
-                          statusFilter === opt.value
-                            ? 'bg-primary-fixed/30 font-semibold text-primary'
-                            : 'text-on-surface hover:bg-surface-container'
-                        }`}
-                      >
-                        <span className="flex items-center gap-xs">
-                          <span className={`h-1.5 w-1.5 rounded-full ${opt.dot}`} />
-                          {opt.label}
-                        </span>
-                        {statusFilter === opt.value && <Check size={14} />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Priority Filter Dropdown */}
-              <div className="relative" ref={priorityRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPriorityMenuOpen((v) => !v)
-                    setStatusMenuOpen(false)
-                    setSortMenuOpen(false)
-                  }}
-                  className={`flex items-center gap-xs rounded-md border px-sm py-xs text-label-md font-semibold transition-colors ${
-                    priorityFilter
-                      ? 'border-primary bg-primary-fixed/40 text-primary'
-                      : 'border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container'
-                  }`}
-                >
-                  <ChevronsUp size={15} />
-                  <span>
-                    {priorityFilter ? `Priority: ${selectedPriorityLabel}` : 'Priority'}
-                  </span>
-                  <ChevronDown size={13} className="opacity-70" />
-                </button>
-
-                {priorityMenuOpen && (
-                  <div className="absolute right-0 z-20 mt-xs w-48 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm">
-                    <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
-                      Filter Priority
-                    </div>
-                    {priorityOptions.map((opt) => {
-                      const Icon = opt.icon
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => {
-                            setPriorityFilter(opt.value)
-                            setPriorityMenuOpen(false)
-                          }}
-                          className={`flex w-full items-center justify-between px-sm py-xs text-body-md transition-colors ${
-                            priorityFilter === opt.value
-                              ? 'bg-primary-fixed/30 font-semibold text-primary'
-                              : 'text-on-surface hover:bg-surface-container'
-                          }`}
-                        >
-                          <span className="flex items-center gap-xs">
-                            <Icon size={14} className={opt.color} />
-                            {opt.label}
-                          </span>
-                          {priorityFilter === opt.value && <Check size={14} />}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Sort Dropdown */}
-              <div className="relative" ref={sortRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortMenuOpen((v) => !v)
-                    setStatusMenuOpen(false)
-                    setPriorityMenuOpen(false)
-                  }}
-                  className="flex items-center gap-xs rounded-md border border-outline-variant bg-surface-container-lowest px-sm py-xs text-label-md font-semibold text-on-surface hover:bg-surface-container transition-colors"
-                >
-                  <ArrowUpDown size={15} />
-                  <span>Sort: {selectedSortLabel}</span>
-                  <ChevronDown size={13} className="opacity-70" />
-                </button>
-
-                {sortMenuOpen && (
-                  <div className="absolute right-0 z-20 mt-xs w-56 rounded-md border border-outline-variant bg-surface-container-lowest py-xs shadow-sm">
-                    <div className="px-sm py-xs font-mono text-code-xs font-bold tracking-wider text-outline uppercase">
-                      Sort Queue By
-                    </div>
-                    {sortOptions.filter((option) => lifecycle !== 'completed' || (option.value !== 'deadline_asc' && option.value !== 'next_deadline_asc')).map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          setSortBy(opt.value)
-                          setSortMenuOpen(false)
-                        }}
-                        className={`flex w-full items-center justify-between px-sm py-xs text-body-md transition-colors ${
-                          sortBy === opt.value
-                            ? 'bg-primary-fixed/30 font-semibold text-primary'
-                            : 'text-on-surface hover:bg-surface-container'
-                        }`}
-                      >
-                        <span>{opt.label}</span>
-                        {sortBy === opt.value && <Check size={14} />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <span className="text-body-md text-on-surface-variant">{filteredTasks.length} {lifecycle === 'completed' ? 'completed' : lifecycle === 'active' ? 'active' : 'total'} issues</span>
           </div>
 
-          <IssueLifecycleTabs value={lifecycle} onChange={setLifecycle} />
-          {lifecycle !== 'completed' && <DeadlineFilters filter={deadlineFilter} onChange={(value) => { setDeadlineFilter(value); setPage(1); if (value === 'upcoming') setSortBy('next_deadline_asc') }} />}
-          {/* Active Filter Chips Bar */}
-          {hasActiveFilters && (
-            <div className="mb-md flex flex-wrap items-center gap-xs">
-              <span className="font-mono text-code-xs font-semibold text-outline uppercase">
-                Active filters:
-              </span>
-              {searchQuery && (
-                <span className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs text-on-surface">
-                  Query: {searchQuery}
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    title="Remove search filter"
-                    aria-label="Remove search filter"
-                    className="text-outline hover:text-on-surface"
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              )}
-              {statusFilter && (
-                <span className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs text-on-surface">
-                  Status: {selectedStatusLabel}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('')}
-                    title="Remove status filter"
-                    aria-label="Remove status filter"
-                    className="text-outline hover:text-on-surface"
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              )}
-              {priorityFilter && (
-                <span className="flex items-center gap-xs rounded border border-outline-variant bg-surface-container-low px-xs py-0.5 font-mono text-code-xs text-on-surface">
-                  Priority: {selectedPriorityLabel}
-                  <button
-                    type="button"
-                    onClick={() => setPriorityFilter('')}
-                    title="Remove priority filter"
-                    aria-label="Remove priority filter"
-                    className="text-outline hover:text-on-surface"
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="font-mono text-code-xs font-semibold text-primary hover:underline"
-              >
-                Clear all
-              </button>
-            </div>
-          )}
-
-          {/* Tabs: Assigned vs Reported */}
-          <div className="mb-md flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant">
-            <div className="flex flex-wrap items-center gap-md">
-              <button type="button" onClick={() => setTab('mine')} aria-pressed={tab === 'mine'} className={`-mb-px border-b-2 pb-xs text-body-md font-semibold ${tab === 'mine' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant'}`}>My work</button>
-              <button
-                type="button"
-                onClick={() => setTab('assigned')}
-                aria-pressed={tab === 'assigned'}
-                className={`-mb-px border-b-2 pb-xs text-body-md font-semibold transition-colors ${
-                  tab === 'assigned'
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                Assigned to Me
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('reported')}
-                aria-pressed={tab === 'reported'}
-                className={`-mb-px border-b-2 pb-xs text-body-md font-semibold transition-colors ${
-                  tab === 'reported'
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                Reported by Me
-              </button>
-            </div>
-
-            <span className="pb-xs font-mono text-code-xs text-on-surface-variant">
-              {filteredTasks.length} {lifecycle === 'completed' ? 'COMPLETED' : lifecycle === 'active' ? 'ACTIVE' : 'TOTAL'} {filteredTasks.length === 1 ? 'ISSUE' : 'ISSUES'}
-            </span>
-          </div>
+          <IssueListControls lifecycle={lifecycle} onLifecycleChange={setLifecycle} search={searchQuery} onSearchChange={setSearchQuery}
+            filterCount={[statusFilter, priorityFilter, deadlineFilter, tab !== 'mine' ? tab : ''].filter(Boolean).length}
+            summary={[
+              tab === 'assigned' ? 'Assigned to me' : tab === 'reported' ? 'Reported by me' : '',
+              statusFilter ? selectedStatusLabel : '', priorityFilter ? `${selectedPriorityLabel} priority` : '',
+              deadlineFilter === 'upcoming' ? 'Due soon' : deadlineFilter === 'overdue' ? 'Resolution overdue' : deadlineFilter === 'missed' ? 'Missed stage targets' : '',
+            ].filter(Boolean).join(' / ')} hasFilters={hasActiveFilters} onClear={clearFilters}>
+            <FilterSelect label="Responsibility" value={tab} onChange={(value) => setTab(value as 'mine' | 'assigned' | 'reported')}>
+              <option value="mine">My work</option><option value="assigned">Assigned to me</option><option value="reported">Reported by me</option>
+            </FilterSelect>
+            {lifecycle !== 'completed' && <FilterSelect label="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as IssueStatus | '')}>
+              {statusOptions.filter((option) => !option.value || matchesLifecycle(option.value, lifecycle)).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FilterSelect>}
+            <FilterSelect label="Priority" value={priorityFilter} onChange={(value) => setPriorityFilter(value as IssuePriority | '')}>
+              {priorityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FilterSelect>
+            {lifecycle !== 'completed' && <FilterSelect label="Deadline" value={deadlineFilter} onChange={(value) => { setDeadlineFilter(value as DeadlineFilter); setPage(1); if (value === 'upcoming') setSortBy('next_deadline_asc') }}>
+              <option value="">Any deadline</option><option value="upcoming">Due soon (next 7 days)</option><option value="overdue">Resolution overdue</option><option value="missed">Missed stage targets</option>
+            </FilterSelect>}
+            <FilterSelect label="Sort by" value={sortBy} onChange={(value) => setSortBy(value as SortOption)}>
+              {sortOptions.filter((option) => lifecycle !== 'completed' || (option.value !== 'deadline_asc' && option.value !== 'next_deadline_asc')).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FilterSelect>
+          </IssueListControls>
 
           {/* Task Cards Grid */}
           {loading ? (
@@ -655,22 +378,13 @@ function MyTasks() {
                   ? 'No tasks matched your current search and filter criteria.'
                   : lifecycle === 'completed' ? 'Closed issues will appear here with their history.' : 'Completed history is available in Completed. Use All to see the full history for this relationship.'}
               </p>
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="mt-xs text-label-md font-semibold text-primary hover:underline"
-                >
-                  Reset all filters
-                </button>
-              )}
+
             </div>
           ) : (
             <div className="space-y-lg">
               {groupedTasks.map((group) => (
                 <section key={group.key} aria-label={group.label}>
-                  <h2 className="text-headline-md font-semibold">{group.label}</h2>
-                  <p className="mb-sm text-body-md text-on-surface-variant">{group.description}</p>
+                  <h2 className="mb-sm text-headline-md font-semibold">{group.label}</h2>
                   <div className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-3">
                     {group.tasks.map((task) => {
                       const Priority = priorityConfig[task.priority]
@@ -700,7 +414,7 @@ function MyTasks() {
                             <h3 className="mt-xs line-clamp-2 text-body-lg font-semibold text-on-surface group-hover:text-primary transition-colors">
                               {task.title}
                             </h3>
-                            <DeadlineSummary issue={task} compact />
+                            {task.deadline_mode !== 'none' && <DeadlineSummary issue={task} compact />}
                           </div>
 
                           <div className="mt-md flex items-center justify-between border-t border-outline-variant pt-xs">

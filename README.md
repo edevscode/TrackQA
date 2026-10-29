@@ -28,6 +28,11 @@ Issue lists use Active / Completed / All, defaulting to Active. Active includes
 OPEN, IN_PROGRESS, FOR_TESTING, FAILED, and PASSED; only DONE is Completed.
 Scope filters run in database queries before backlog pagination. Completed issues
 remain searchable through global search and retain their evidence and history.
+One toolbar holds the lifecycle switch, search, and a collapsed Filters panel.
+Status, priority, deadlines, sorting, and responsibility/assignee controls appear
+only when expanded. Applied filters remain visible as a short summary with one
+Clear action. The dashboard previews active work; its completed count opens the
+completed backlog instead of repeating list filters.
 
 My Tasks defaults to My work (assigned to or reported by the current member,
 counted once). Active work is grouped into Needs your action, In progress, and

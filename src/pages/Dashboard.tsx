@@ -1,7 +1,6 @@
 import DeadlineOverview from '../components/DeadlineOverview'
 import IssueWorkOverview from '../components/IssueWorkOverview'
-import IssueLifecycleTabs from '../components/IssueLifecycleTabs'
-import { workGroup, workGroups, workGroupOrder, type IssueLifecycle } from '../lib/issueWork'
+import { workGroup, workGroups, workGroupOrder } from '../lib/issueWork'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
@@ -13,11 +12,8 @@ import {
   ChevronUp,
   Clock,
   Equal,
-  FlaskConical,
   Plus,
   RefreshCw,
-  Settings,
-  Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -104,7 +100,6 @@ function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { profile, user } = useAuth()
   const { currentProject, currentRole, canReportIssues } = useProject()
-  const [lifecycle, setLifecycle] = useState<IssueLifecycle>('active')
   const [unassignedCount, setUnassignedCount] = useState(0)
   const requestVersion = useRef(0)
   const minute = useDeadlineClock()
@@ -121,7 +116,7 @@ function Dashboard() {
       if (!currentProject || !user) return
 
       const userId = user.id
-      const cacheKey = `dashboard:${currentProject.id}:${userId}:${lifecycle}`
+      const cacheKey = `dashboard:${currentProject.id}:${userId}:active`
       const hasCached = !forceRefresh && queryCache.get(cacheKey)
 
       if (forceRefresh) {
@@ -134,7 +129,7 @@ function Dashboard() {
       const version = ++requestVersion.current
       try {
         const [data] = await Promise.all([
-          fetchDashboardData(currentProject.id, userId, { forceRefresh, lifecycle }),
+          fetchDashboardData(currentProject.id, userId, { forceRefresh }),
           forceRefresh ? new Promise((r) => setTimeout(r, 500)) : Promise.resolve(),
         ])
         if (version !== requestVersion.current) return
@@ -150,7 +145,7 @@ function Dashboard() {
 
       prefetchIssuesData(currentProject.id)
     },
-    [currentProject, user, lifecycle],
+    [currentProject, user],
   )
 
   useEffect(() => {
@@ -237,20 +232,17 @@ function Dashboard() {
 
               {/* Two-Column Workbench Canvas */}
               <div className="grid grid-cols-1 gap-lg lg:grid-cols-12">
-                {/* Left Column: Verification Backlog & Recent Issues */}
+                {/* Left Column: Verification Backlog & Active Issues */}
                 <div className="flex flex-col lg:col-span-8 min-w-0">
                   <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
                     <div className="flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant px-lg py-md">
                       <div className="flex flex-wrap items-center gap-sm">
                         <h3 className="text-headline-md font-semibold text-on-surface">
-                          Recent Issues
+                          Active Issues
                         </h3>
-                        <span className="rounded bg-surface-container px-sm py-[2px] font-mono text-code-xs font-semibold text-on-surface-variant">
-                          {recentIssues.length} items
-                        </span>
                       </div>
                       <Link
-                        to={`/issues?view=${lifecycle}`}
+                        to="/issues?view=active"
                         className="inline-flex items-center gap-xs text-body-md font-semibold text-primary hover:underline"
                       >
                         <span>View Full Backlog</span>
@@ -258,19 +250,12 @@ function Dashboard() {
                       </Link>
                     </div>
 
-                    <div className="px-lg pt-md"><IssueLifecycleTabs value={lifecycle} onChange={setLifecycle} /></div>
                     {recentIssues.length === 0 ? (
                       <div className="px-lg py-xl text-center">
                         <p className="text-body-lg text-on-surface-variant">
-                          {lifecycle === 'completed' ? 'No completed issues yet.' : lifecycle === 'active' ? 'No active issues. Completed history is available in Completed.' : 'No issues recorded in this project yet.'}
+                          No active issues. Completed history is available from the workload summary.
                         </p>
-                        {canReportIssues && lifecycle !== 'completed' && <Link
-                          to="/issues/new"
-                          className="mt-sm inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container"
-                        >
-                          <Plus size={16} />
-                          Report First Issue
-                        </Link>}
+
                       </div>
                     ) : (
                       <>
@@ -324,7 +309,6 @@ function Dashboard() {
                                 <th className="px-lg py-sm">Status</th>
                                 <th className="px-lg py-sm">Priority</th>
                                 <th className="px-lg py-sm">Assignee</th>
-                                <th className="px-lg py-sm text-right">Action</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-outline-variant">
@@ -382,15 +366,6 @@ function Dashboard() {
                                           {issue.assignee?.full_name ?? 'Unassigned'}
                                         </span>
                                       </div>
-                                    </td>
-                                    <td className="whitespace-nowrap px-lg py-md text-right">
-                                      <Link
-                                        to={`/issues/${issue.id}`}
-                                        className="inline-flex items-center gap-xs text-label-md font-semibold text-on-surface-variant transition-colors hover:text-primary"
-                                      >
-                                        <span>Details</span>
-                                        <ChevronRight size={14} />
-                                      </Link>
                                     </td>
                                   </tr>
                                 )
@@ -460,57 +435,8 @@ function Dashboard() {
                       </div>
                     )}
 
-                    {canReportIssues && <div className="border-t border-outline-variant p-md">
-                      <Link
-                        to="/issues/new"
-                        className="flex w-full items-center justify-center gap-xs rounded-md border border-outline-variant bg-surface-container-low py-sm text-body-md font-semibold text-on-surface transition-colors hover:bg-surface-container"
-                      >
-                        <Plus size={16} />
-                        <span>Log Issue / Task</span>
-                      </Link>
-                    </div>}
                   </div>
 
-                  {/* QA Workbench Fast Actions */}
-                  <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg">
-                    <h3 className="mb-sm text-headline-md font-semibold text-on-surface">
-                      Workbench Shortcuts
-                    </h3>
-                    <div className="flex flex-col gap-xs">
-                      <Link
-                        to="/issues?view=active&status=FOR_TESTING"
-                        className="flex items-center justify-between rounded-md p-sm text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-low"
-                      >
-                        <span className="flex items-center gap-sm">
-                          <FlaskConical size={16} className="text-primary" />
-                          Ready for Testing
-                        </span>
-                        <span className="rounded bg-primary-fixed px-sm py-0.5 font-mono text-code-xs font-bold text-on-primary-fixed">
-                          {stats?.for_testing_issues ?? 0}
-                        </span>
-                      </Link>
-                      <Link
-                        to="/members"
-                        className="flex items-center justify-between rounded-md p-sm text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-low"
-                      >
-                        <span className="flex items-center gap-sm">
-                          <Users size={16} className="text-outline" />
-                          Team &amp; Roles
-                        </span>
-                        <ChevronRight size={16} className="text-outline" />
-                      </Link>
-                      <Link
-                        to="/project-settings"
-                        className="flex items-center justify-between rounded-md p-sm text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-low"
-                      >
-                        <span className="flex items-center gap-sm">
-                          <Settings size={16} className="text-outline" />
-                          Project Settings
-                        </span>
-                        <ChevronRight size={16} className="text-outline" />
-                      </Link>
-                    </div>
-                  </div>
                 </div>
               </div>
             </>
