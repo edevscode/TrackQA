@@ -36,8 +36,8 @@ declare
   v_failed_history jsonb; v_count bigint;
 begin
   select * into f from deadline_fixture;
-  insert into public.issues(id, project_id, title, assignee_id, work_cycle, completed_at)
-  values(f.issue_id, f.project_id, 'Deadline issue', f.developer_id, 99, now());
+  insert into public.issues(id, project_id, title, assignee_id, work_cycle, completed_at, deadline_timezone)
+  values(f.issue_id, f.project_id, 'Deadline issue', f.developer_id, 99, now(), 'Asia/Manila');
   select * into v_issue from public.issues where id = f.issue_id;
   if v_issue.resolve_by is not null or v_issue.work_cycle <> 1 or v_issue.completed_at is not null then
     raise exception 'New issues must be optional and system timestamps must not be spoofable';
@@ -49,15 +49,15 @@ begin
   perform pg_temp.expect_deadline_denied(format(
     'update public.issues set resolve_by=''infinity'' where id=%L', f.issue_id), '23514');
 
-  update public.issues set start_by=v_day-1, ready_for_qa_by=v_day,
+  update public.issues set deadline_mode='stages', start_by=v_day-1, ready_for_qa_by=v_day,
     qa_decision_by=v_day, resolve_by=v_day+1 where id=f.issue_id;
   if not exists (select 1 from public.issue_deadline_history where issue_id=f.issue_id
       and event='TARGETS_CHANGED' and actor_id=f.reporter_id
       and before_values->>'resolve_by' is null and after_values->>'resolve_by'=(v_day+1)::text) then
     raise exception 'Reporter deadline changes must record old/new values and actor';
   end if;
-  insert into public.issues(id, project_id, title, assignee_id, resolve_by)
-  values(f.late_issue_id, f.project_id, 'Overdue issue', f.developer_id, v_day-1);
+  insert into public.issues(id, project_id, title, assignee_id, deadline_mode, resolve_by, deadline_timezone)
+  values(f.late_issue_id, f.project_id, 'Overdue issue', f.developer_id, 'single', v_day-1, 'Asia/Manila');
   if not exists(select 1 from public.v_issue_deadlines where id=f.late_issue_id and is_overdue)
      or not exists(select 1 from public.v_project_dashboard_stats where project_id=f.project_id and overdue_issues=1) then
     raise exception 'Overdue filters and dashboard count must match';
@@ -69,8 +69,10 @@ begin
   update public.issues set resolve_by=v_day+2 where id=f.issue_id;
   perform pg_temp.expect_deadline_denied(format(
     'update public.projects set timezone=''Invalid/Timezone'' where id=%L', f.project_id), '22023');
-  perform pg_temp.expect_deadline_denied(format(
-    'update public.projects set timezone=''UTC'' where id=%L', f.project_id), '22023');
+  update public.projects set timezone='UTC' where id=f.project_id;
+  if not exists(select 1 from public.issues where id=f.issue_id and deadline_timezone='Asia/Manila' and resolve_timezone='Asia/Manila') then
+    raise exception 'Project metadata must not reinterpret saved target timezones';
+  end if;
 
   perform set_config('request.jwt.claims', json_build_object('sub',f.developer_id,'role','authenticated')::text, true);
   perform pg_temp.expect_deadline_denied(format(

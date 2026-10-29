@@ -1,5 +1,6 @@
 import DeadlineFields from '../components/DeadlineFields'
-import { deadlineInput, deadlinePayload, validateDeadlines } from '../lib/deadlines'
+import { deadlinePayload, validateDeadlines } from '../lib/deadlines'
+import { useLocalDeadlineInput } from '../hooks/useLocalDeadlineInput'
 import { uploadFiles } from '../lib/uploadBatch'
 import { saveIssueAttachment } from '../lib/attachments'
 import {
@@ -80,7 +81,7 @@ function CreateIssue() {
   const { currentProject } = useProject()
 
   const draft = getIssueDraft()
-  const [deadlines, setDeadlines] = useState(() => deadlineInput(draft))
+  const [deadlines, setDeadlines] = useLocalDeadlineInput(draft)
 
   const [members, setMembers] = useState<Member[]>([])
   const [title, setTitle] = useState(draft.title ?? '')
@@ -168,6 +169,7 @@ function CreateIssue() {
       .from('issues')
       .insert({
         ...deadlinePayload(deadlines),
+        deadline_timezone: deadlines.entry_timezone,
         project_id: currentProject.id,
         title,
         description: description || null,
@@ -254,7 +256,7 @@ function CreateIssue() {
           <form id="issue-form" onSubmit={handleSubmit} className="grid grid-cols-1 gap-lg lg:grid-cols-12">
             {/* Left Column: Issue Blueprint & Repro (lg:col-span-8) */}
             <div className="flex flex-col gap-lg lg:col-span-8">
-              <DeadlineFields prefix="create" value={deadlines} onChange={setDeadlines} timezone={currentProject?.timezone ?? 'Asia/Manila'} disabled={submitting} />
+              <DeadlineFields prefix="create" value={deadlines} onChange={setDeadlines} timezone={deadlines.entry_timezone} disabled={submitting} />
               {/* Issue Summary */}
               <div className="rounded-lg border border-outline-variant bg-surface-container-lowest">
                 <div className="border-b border-outline-variant px-lg py-sm text-headline-md font-semibold text-on-surface">

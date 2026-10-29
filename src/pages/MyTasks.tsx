@@ -1,7 +1,7 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineFilters from '../components/DeadlineFilters'
 import { deadlineState, compareResolutionDates, type DeadlineFilter } from '../lib/deadlines'
-import { useDeadlineDay } from '../hooks/useDeadlineDay'
+import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
   ArrowUpDown,
@@ -163,7 +163,7 @@ function MyTasks() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { user } = useAuth()
   const { currentProject } = useProject()
-  const day = useDeadlineDay(currentProject?.timezone)
+  const minute = useDeadlineClock()
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>('')
 
   const [tab, setTab] = useState<'assigned' | 'reported'>('assigned')
@@ -233,7 +233,7 @@ function MyTasks() {
 
   useEffect(() => {
     loadTasks()
-  }, [loadTasks, day])
+  }, [loadTasks, minute])
 
   useRealtimeSync({
     projectId: currentProject?.id,
@@ -265,7 +265,7 @@ function MyTasks() {
 
     if (deadlineFilter) {
       list = list.filter((task) => {
-        const state = deadlineState(task, day)
+        const state = deadlineState(task, new Date(minute * 60_000 + 1))
         return deadlineFilter === 'overdue' ? state.overdue : task.status !== 'DONE' && state.missedStage
       })
     }
@@ -287,7 +287,7 @@ function MyTasks() {
     })
 
     return list
-  }, [tasks, searchQuery, statusFilter, priorityFilter, sortBy, currentProject?.key, deadlineFilter, day])
+  }, [tasks, searchQuery, statusFilter, priorityFilter, sortBy, currentProject?.key, deadlineFilter, minute])
 
   const hasActiveFilters =
     Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter) || Boolean(deadlineFilter)

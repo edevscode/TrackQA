@@ -1,6 +1,6 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineFilters from '../components/DeadlineFilters'
-import { useDeadlineDay } from '../hooks/useDeadlineDay'
+import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import type { DeadlineFilter } from '../lib/deadlines'
 import LoadError from '../components/LoadError'
 import {
@@ -102,8 +102,8 @@ function Issues() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { currentProject } = useProject()
-  const day = useDeadlineDay(currentProject?.timezone)
-  const previousDay = useRef(day)
+  const minute = useDeadlineClock()
+  const previousMinute = useRef(minute)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedDeadline = searchParams.get('deadline')
   const deadlineFilter: DeadlineFilter = requestedDeadline === 'overdue' || requestedDeadline === 'missed' ? requestedDeadline : ''
@@ -202,10 +202,10 @@ function Issues() {
   )
 
   useEffect(() => {
-    const crossedMidnight = previousDay.current !== day
-    previousDay.current = day
-    void loadIssues(crossedMidnight)
-  }, [loadIssues, day])
+    const clockChanged = previousMinute.current !== minute
+    previousMinute.current = minute
+    void loadIssues(clockChanged)
+  }, [loadIssues, minute])
 
   useRealtimeSync({
     projectId: currentProject?.id,

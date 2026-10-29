@@ -72,7 +72,6 @@ function ProjectSettings() {
 
   const [isEditingGeneral, setIsEditingGeneral] = useState(false)
   const [name, setName] = useState('')
-  const [timezone, setTimezone] = useState('Asia/Manila')
   const [description, setDescription] = useState('')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -108,7 +107,6 @@ function ProjectSettings() {
 
   useEffect(() => {
     if (!currentProject) return
-    setTimezone(currentProject.timezone)
     setName(currentProject.name)
     setDescription(currentProject.description ?? '')
   }, [currentProject])
@@ -146,15 +144,13 @@ function ProjectSettings() {
   const handleSave = async (e: FormEvent) => {
     e.preventDefault()
     if (!currentProject || !isOwner) return
-    try { new Intl.DateTimeFormat('en-US', { timeZone: timezone.trim() }).format() }
-    catch { setSaveError('Choose a valid IANA timezone or UTC.'); return }
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(false)
 
     const { error } = await supabase
       .from('projects')
-      .update({ name, description: description || null, timezone: timezone.trim() })
+      .update({ name, description: description || null })
       .eq('id', currentProject.id)
 
     setSaving(false)
@@ -453,13 +449,6 @@ function ProjectSettings() {
                     />
                   </div>
 
-                  <div>
-                    <label htmlFor="deadline-timezone" className="mb-xs block text-label-md font-bold">Deadline timezone</label>
-                    <input id="deadline-timezone" list="timezone-options" value={timezone} onChange={(event) => setTimezone(event.target.value)} disabled={!isOwner || !isEditingGeneral}
-                      className="w-full rounded border border-outline-variant bg-surface-container-low px-sm py-xs text-body-md focus-visible:outline-2 disabled:opacity-60" />
-                    <datalist id="timezone-options">{Intl.supportedValuesOf('timeZone').map((zone) => <option key={zone} value={zone} />)}</datalist>
-                    <p className="mt-xs text-body-md text-on-surface-variant">Use an IANA timezone, such as Asia/Manila or UTC. All target dates end in this timezone. Set it before assigning deadlines; it is locked while issues have targets.</p>
-                  </div>
 
                   {/* Access Code Workbench Box */}
                   {isOwner && (

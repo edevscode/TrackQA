@@ -50,15 +50,43 @@ Run `npm run dev` to start the frontend.
 ## Existing deployments
 
 For the deadline release, apply **0028_issue_deadlines.sql** after 0027 and
-before deploying this frontend. It adds optional resolution/stage targets,
+then **0029_deadline_modes_and_times.sql** and **0030_user_local_deadline_timezones.sql**
+before deploying this frontend.
+Migration 0028 adds optional resolution/stage targets,
 project timezone, workflow-managed milestone timestamps, and append-only history.
 Existing issues start unscheduled; old milestone timestamps remain unknown.
 
-Set the project's deadline timezone in Project Settings before assigning targets.
-Existing projects default to `Asia/Manila`. The timezone is locked while any issue
-has targets, so changing settings cannot silently shift a delivery commitment.
-Every supplied date must follow milestone order; gaps and same-day targets are
-allowed. All dates run through the end of their day in the project timezone.
+Migration 0029 adds explicit No deadline / Single deadline / Stage deadlines
+choices and optional times. Existing date-only targets keep
+their full end-of-day commitment, including completed issues. Resolution-only
+records select Single; records with stage targets select Stages. Completion
+timestamps, updated_at, and old history snapshots are preserved during backfill.
+Apply this transaction as a trusted database administrator; it briefly locks the
+issues table while converting metadata and rebuilding the deadline views.
+
+No deadline stores no live targets. Single requires one resolution target and
+clears all stage targets. Stages supports partial milestone planning, with an
+optional Close by target. Hidden draft entries survive toggling while editing;
+only the selected type is saved. Editing a saved issue requires acknowledging
+targets that a mode change removes. History records the old/new mode and times.
+
+Migration 0030 uses the browser/device timezone for new deadline entry and converts
+saved UTC cutoffs into each viewer's local timezone for lists, details, and history.
+No project timezone setup is required. The detected timezone is visible beside the
+time controls. Detection uses browser settings, without IP lookup or location access.
+Existing source timezones and UTC commitments are preserved, including old end-of-day
+targets. Editing another field from a different timezone does not move a saved cutoff.
+Changing one target uses the editor's current timezone while untouched targets retain
+their original source metadata. Old project timezone values remain for compatibility
+with older clients; the current UI does not use them for scheduling.
+Every supplied date/time must follow milestone order; gaps and equal cutoffs are
+allowed. End of day is the last instant of the selected calendar date in the
+timezone where it is entered; other viewers see that same instant converted locally.
+Times can include seconds when needed to preserve a converted cutoff. PostgreSQL stores protected
+UTC cutoff timestamps for comparison and sorting; clients cannot edit them.
+Nonexistent or ambiguous local times during clock changes must be replaced by
+an unambiguous time. Overdue indicators and counts refresh once per minute while
+the app is open. Permissions and QA retry policies stay shared across deadline types.
 
 Owners and original reporters can set, clear, or reschedule dates before Done.
 Developers keep their status transitions but cannot alter targets or measured
@@ -119,6 +147,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/invitation_permissions
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_update_permissions.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/privacy_storage_and_deletion.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/issue_deadlines.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/deadline_modes_and_times.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/user_local_deadline_timezones.sql
 ```
 
 Browser checks: tab through each modal, close with Escape, and confirm focus returns

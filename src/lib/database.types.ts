@@ -67,7 +67,23 @@ export type ProjectInvitation = {
   expires_at: string
 }
 
-export type IssueDeadlines = {
+export type DeadlineMode = 'none' | 'single' | 'stages'
+export type DeadlineTiming = {
+  start_timezone: string | null
+  ready_for_qa_timezone: string | null
+  qa_decision_timezone: string | null
+  resolve_timezone: string | null
+  deadline_mode: DeadlineMode
+  resolve_time: string | null
+  start_time: string | null
+  ready_for_qa_time: string | null
+  qa_decision_time: string | null
+  resolve_cutoff_at: string | null
+  start_cutoff_at: string | null
+  ready_for_qa_cutoff_at: string | null
+  qa_decision_cutoff_at: string | null
+}
+export type IssueDeadlines = DeadlineTiming & {
   resolve_by: string | null
   start_by: string | null
   ready_for_qa_by: string | null
@@ -80,7 +96,7 @@ export type IssueDeadlines = {
   completed_at: string | null
 }
 
-export type DeadlineSnapshot = Omit<IssueDeadlines, 'deadline_timezone'> & {
+export type DeadlineSnapshot = Omit<IssueDeadlines, 'deadline_timezone' | keyof DeadlineTiming> & Partial<DeadlineTiming> & {
   timezone: string
   status: IssueStatus
 }

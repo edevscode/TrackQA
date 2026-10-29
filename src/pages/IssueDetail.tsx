@@ -1,7 +1,8 @@
 import DeadlineFields from '../components/DeadlineFields'
+import { useLocalDeadlineInput } from '../hooks/useLocalDeadlineInput'
 import DeadlineSummary from '../components/DeadlineSummary'
 import DeadlineHistoryPanel from '../components/DeadlineHistoryPanel'
-import { deadlineInput, deadlinePayload, validateDeadlines, emptyDeadlines } from '../lib/deadlines'
+import { deadlineInput, deadlinePayload, validateDeadlines, emptyDeadlines, removedDeadlineTargets, deadlineLabel, deadlineMode, formatSavedDeadline } from '../lib/deadlines'
 import type { DeadlineHistory } from '../lib/database.types'
 import { uploadFiles } from '../lib/uploadBatch'
 import LoadError from '../components/LoadError'
@@ -189,7 +190,8 @@ function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const [editDeadlines, setEditDeadlines] = useState({ ...emptyDeadlines })
+  const [editDeadlines, setEditDeadlines] = useLocalDeadlineInput(emptyDeadlines)
+  const [reviewedRemovalKey, setReviewedRemovalKey] = useState<string | null>(null)
   const [deadlineHistory, setDeadlineHistory] = useState<DeadlineHistory[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [pendingEvidence, setPendingEvidence] = useState<{ files: File[]; verificationId?: string }[]>(() => {
@@ -203,6 +205,8 @@ function IssueDetail() {
   const { currentProject, setCurrentProjectId } = useProject()
 
   const [issue, setIssue] = useState<Issue | null>(null)
+  const removedTargets = issue ? removedDeadlineTargets(issue, editDeadlines) : []
+  const removalReviewKey = JSON.stringify([issue?.updated_at, editDeadlines.deadline_mode, removedTargets])
   const [project, setProject] = useState<Project | null>(null)
   const [reporter, setReporter] = useState<{
     full_name: string | null
@@ -276,7 +280,7 @@ function IssueDetail() {
     setNotFound(false)
     try {
       const { data: issueData, error: issueError } = await supabase
-        .from('issues')
+        .from('v_issue_deadlines')
         .select('*, project:projects(*), reporter:profiles!issues_reporter_id_fkey(full_name, avatar_url)')
         .eq('id', issueId)
         .single()
@@ -503,6 +507,7 @@ function IssueDetail() {
   const openEditModal = () => {
     if (!issue) return
     setEditDeadlines(deadlineInput(issue))
+    setReviewedRemovalKey(null)
     setEditTitle(issue.title)
     setEditPriority(issue.priority)
     setEditAssigneeId(issue.assignee_id ?? '')
@@ -520,15 +525,18 @@ function IssueDetail() {
   const handleSaveEdit = async (e: FormEvent) => {
     e.preventDefault()
     if (!issue || !editTitle.trim()) return
-    const deadlineError = validateDeadlines(editDeadlines)
+    const deadlineError = validateDeadlines(editDeadlines, editDeadlines.entry_timezone, issue)
     if (deadlineError) { setEditError(deadlineError); return }
+    if (removedTargets.length && reviewedRemovalKey !== removalReviewKey) {
+      setEditError('Review and confirm the saved targets that this mode change removes.'); return
+    }
     setSavingEdit(true)
     setEditError(null)
 
     const { error } = await supabase
       .from('issues')
       .update({
-        ...deadlinePayload(editDeadlines),
+        ...deadlinePayload(editDeadlines, issue),
         title: editTitle.trim(),
         priority: editPriority,
         assignee_id: editAssigneeId || null,
@@ -1688,8 +1696,20 @@ function IssueDetail() {
             </div>
 
             <form onSubmit={handleSaveEdit} className="flex flex-1 flex-col overflow-hidden">
-                <DeadlineFields prefix="edit" value={editDeadlines} onChange={setEditDeadlines} timezone={activeProject?.timezone ?? issue.deadline_timezone} disabled={savingEdit} />
               <div className="flex-1 overflow-y-auto p-md space-y-md">
+                <DeadlineFields prefix="edit" value={editDeadlines} onChange={setEditDeadlines} timezone={editDeadlines.entry_timezone} disabled={savingEdit} />
+                {removedTargets.length > 0 && (
+                  <div role="alert" className="rounded-md border border-amber-600/40 bg-amber-500/10 p-sm text-body-md">
+                    <p className="font-semibold">Saving this deadline type removes these saved targets:</p>
+                    <ul className="my-sm list-inside list-disc">
+                      {removedTargets.map((key) => <li key={key}>{deadlineLabel(key, deadlineMode(issue))}: {formatSavedDeadline(issue, key, editDeadlines.entry_timezone)}</li>)}
+                    </ul>
+                    <label className="flex items-start gap-xs">
+                      <input type="checkbox" required disabled={savingEdit} checked={reviewedRemovalKey === removalReviewKey} onChange={(event) => setReviewedRemovalKey(event.target.checked ? removalReviewKey : null)} className="mt-1 accent-primary" />
+                      I understand these targets will be removed. Their previous values will remain in history.
+                    </label>
+                  </div>
+                )}
                 {editError && (
                   <p className="rounded border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">
                     {editError}

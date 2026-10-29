@@ -1,4 +1,4 @@
-import { useDeadlineDay } from '../hooks/useDeadlineDay'
+import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
 import {
   ArrowRight,
@@ -103,8 +103,8 @@ function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { profile } = useAuth()
   const { currentProject } = useProject()
-  const day = useDeadlineDay(currentProject?.timezone)
-  const previousDay = useRef(day)
+  const minute = useDeadlineClock()
+  const previousMinute = useRef(minute)
 
   const [stats, setStats] = useState<ProjectDashboardStats | null>(null)
   const [recentIssues, setRecentIssues] = useState<RecentIssue[]>([])
@@ -148,10 +148,10 @@ function Dashboard() {
   )
 
   useEffect(() => {
-    const crossedMidnight = previousDay.current !== day
-    previousDay.current = day
-    void loadData(crossedMidnight)
-  }, [loadData, day])
+    const clockChanged = previousMinute.current !== minute
+    previousMinute.current = minute
+    void loadData(clockChanged)
+  }, [loadData, minute])
 
   useRealtimeSync({
     projectId: currentProject?.id,
