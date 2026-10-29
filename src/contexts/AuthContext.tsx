@@ -1,8 +1,10 @@
 import type { Session, User } from '@supabase/supabase-js'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, Fragment, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Profile } from '../lib/database.types'
+import { queryCache } from '../lib/cache'
+import { clearIssueDraft } from '../lib/issueDraftStore'
 
 interface AuthContextValue {
   session: Session | null
@@ -28,6 +30,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const activeUserId = useRef<string | null>(null)
+
+  const acceptSession = (next: Session | null) => {
+    const nextId = next?.user.id ?? null
+    if (activeUserId.current !== nextId) {
+      activeUserId.current = nextId
+      queryCache.setIdentity(nextId)
+      clearIssueDraft()
+      setProfile(null)
+    }
+    setSession(next)
+  }
 
   const loadProfile = async (userId: string) => {
     const { data } = await supabase
@@ -35,31 +49,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('id', userId)
       .single()
-    setProfile(data ?? null)
+    if (activeUserId.current === userId) setProfile(data ?? null)
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      if (data.session) {
-        loadProfile(data.session.user.id).finally(() => setLoading(false))
+    let active = true
+    let receivedAuthEvent = false
+    const applySession = (next: Session | null) => {
+      if (!active) return
+      acceptSession(next)
+      if (next) {
+        // Defer database work until the auth callback releases its lock.
+        queueMicrotask(() => {
+          if (!active) return
+          void loadProfile(next.user.id).finally(() => {
+            if (active) setLoading(false)
+          })
+        })
       } else {
         setLoading(false)
       }
+    }
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!receivedAuthEvent) applySession(data.session)
+    }).catch(() => {
+      if (active && !receivedAuthEvent) applySession(null)
     })
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
-        setSession(newSession)
-        if (newSession) {
-          loadProfile(newSession.user.id)
-        } else {
-          setProfile(null)
-        }
+        receivedAuthEvent = true
+        applySession(newSession)
       },
     )
 
-    return () => subscription.subscription.unsubscribe()
+    return () => {
+      active = false
+      subscription.subscription.unsubscribe()
+    }
   }, [])
 
   const signIn = async (email: string, password: string) => {
@@ -126,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updatePassword,
       }}
     >
-      {children}
+      <Fragment key={session?.user.id ?? 'anonymous'}>{children}</Fragment>
     </AuthContext.Provider>
   )
 }

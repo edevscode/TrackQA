@@ -1,3 +1,7 @@
+import { uploadFiles } from '../lib/uploadBatch'
+import LoadError from '../components/LoadError'
+import { useDialogFocus } from '../hooks/useDialogFocus'
+import { saveIssueAttachment, resolveAttachmentUrls, removeAttachmentFile } from '../lib/attachments'
 import {
   AlertCircle,
   Bug,
@@ -23,7 +27,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
 import ImagePreviewModal, { type PreviewImage } from '../components/ImagePreviewModal'
@@ -33,7 +37,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { useRealtimeSync } from '../hooks/useRealtimeSync'
 import { invalidateProjectCache } from '../lib/cache'
-import { MAX_UPLOAD_BYTES, uploadToCloudinary } from '../lib/cloudinary'
+import { MAX_UPLOAD_BYTES } from '../lib/cloudinary'
 import { supabase } from '../lib/supabase'
 import type {
   ActivityAction,
@@ -157,6 +161,7 @@ type TimelineComment = {
 }
 
 type AttachmentRow = IssueAttachment & {
+  url: string
   uploader: { full_name: string | null } | null
 }
 
@@ -178,6 +183,15 @@ function formatBytes(bytes: number | null) {
 function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [pendingEvidence, setPendingEvidence] = useState<{ files: File[]; verificationId?: string }[]>(() => {
+    const files = (location.state as { failedAttachments?: File[] } | null)?.failedAttachments
+    return files?.length ? [{ files }] : []
+  })
+  useEffect(() => {
+    if (location.state) navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate])
   const { user, profile } = useAuth()
   const { currentProject, setCurrentProjectId } = useProject()
 
@@ -189,7 +203,7 @@ function IssueDetail() {
   } | null>(null)
   const [latestFailure, setLatestFailure] = useState<QaVerification | null>(null)
   const [latestFailureAttachments, setLatestFailureAttachments] = useState<
-    QaVerificationAttachment[]
+    (QaVerificationAttachment & { url: string })[]
   >([])
   const [members, setMembers] = useState<Member[]>([])
   const [comments, setComments] = useState<TimelineComment[]>([])
@@ -214,6 +228,9 @@ function IssueDetail() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const editDialogRef = useDialogFocus(editModalOpen, () => {
+    if (!savingEdit) setEditModalOpen(false)
+  })
   const [editTitle, setEditTitle] = useState('')
   const [editPriority, setEditPriority] = useState<IssuePriority>('MEDIUM')
   const [editAssigneeId, setEditAssigneeId] = useState<string>('')
@@ -248,88 +265,105 @@ function IssueDetail() {
   const load = useCallback(async () => {
     if (!issueId) return
     setLoading(true)
+    setLoadError(null)
+    setNotFound(false)
+    try {
+      const { data: issueData, error: issueError } = await supabase
+        .from('issues')
+        .select('*, project:projects(*), reporter:profiles!issues_reporter_id_fkey(full_name, avatar_url)')
+        .eq('id', issueId)
+        .single()
 
-    const { data: issueData, error: issueError } = await supabase
-      .from('issues')
-      .select('*, project:projects(*), reporter:profiles!issues_reporter_id_fkey(full_name, avatar_url)')
-      .eq('id', issueId)
-      .single()
-
-    if (issueError || !issueData) {
-      setNotFound(true)
-      setLoading(false)
-      return
-    }
-
-    const { reporter: reporterProfile, project: projectData, ...issueRow } =
-      issueData as unknown as Issue & {
-        project: Project | null
-        reporter: { full_name: string | null; avatar_url: string | null } | null
+      if (issueError && issueError.code !== 'PGRST116') throw issueError
+      if (!issueData) {
+        setNotFound(true)
+        setLoading(false)
+        return
       }
 
-    setIssue(issueRow)
-    setProject(projectData)
-    setReporter(reporterProfile)
+      const { reporter: reporterProfile, project: projectData, ...issueRow } =
+        issueData as unknown as Issue & {
+          project: Project | null
+          reporter: { full_name: string | null; avatar_url: string | null } | null
+        }
 
-    if (projectData && localStorage.getItem('trackqa:currentProjectId') !== projectData.id) {
-      setCurrentProjectId(projectData.id)
-    }
+      setIssue(issueRow)
+      setProject(projectData)
+      setReporter(reporterProfile)
 
-    const [commentsRes, activityRes, attachmentsRes] = await Promise.all([
-      supabase
-        .from('issue_comments')
-        .select(
-          'id, content, created_at, author:profiles!issue_comments_author_id_fkey(full_name, avatar_url)',
-        )
-        .eq('issue_id', issueId)
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('issue_activity')
-        .select('id, action, from_value, to_value, created_at, actor:profiles!issue_activity_actor_id_fkey(full_name)')
-        .eq('issue_id', issueId)
-        .neq('action', 'COMMENT_ADDED')
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('issue_attachments')
-        .select('*, uploader:profiles!issue_attachments_uploaded_by_fkey(full_name)')
-        .eq('issue_id', issueId)
-        .order('created_at', { ascending: false }),
-    ])
-    setComments((commentsRes.data as unknown as TimelineComment[]) ?? [])
-    setActivity((activityRes.data as unknown as TimelineActivity[]) ?? [])
-    setAttachments((attachmentsRes.data as unknown as AttachmentRow[]) ?? [])
+      if (projectData && localStorage.getItem('trackqa:currentProjectId') !== projectData.id) {
+        setCurrentProjectId(projectData.id)
+      }
 
-    if (issueRow.status === 'FAILED') {
-      const { data: failureData } = await supabase
-        .from('qa_verifications')
-        .select('*')
-        .eq('issue_id', issueId)
-        .eq('result', 'FAILED')
-        .order('verified_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      setLatestFailure(failureData)
+      const [commentsRes, activityRes, attachmentsRes] = await Promise.all([
+        supabase
+          .from('issue_comments')
+          .select(
+            'id, content, created_at, author:profiles!issue_comments_author_id_fkey(full_name, avatar_url)',
+          )
+          .eq('issue_id', issueId)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('issue_activity')
+          .select('id, action, from_value, to_value, created_at, actor:profiles!issue_activity_actor_id_fkey(full_name)')
+          .eq('issue_id', issueId)
+          .neq('action', 'COMMENT_ADDED')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('issue_attachments')
+          .select('*, uploader:profiles!issue_attachments_uploaded_by_fkey(full_name)')
+          .eq('issue_id', issueId)
+          .order('created_at', { ascending: false }),
+      ])
+      for (const response of [commentsRes, activityRes, attachmentsRes]) {
+        if (response.error) throw response.error
+      }
+      setComments((commentsRes.data as unknown as TimelineComment[]) ?? [])
+      setActivity((activityRes.data as unknown as TimelineActivity[]) ?? [])
+      setAttachments(await resolveAttachmentUrls((attachmentsRes.data as unknown as AttachmentRow[]) ?? []))
 
-      if (failureData) {
-        const { data: evidenceData } = await supabase
-          .from('qa_verification_attachments')
+      if (issueRow.status === 'FAILED') {
+        const { data: failureData, error: failureError } = await supabase
+          .from('qa_verifications')
           .select('*')
-          .eq('qa_verification_id', failureData.id)
-          .order('created_at', { ascending: true })
-        setLatestFailureAttachments(evidenceData ?? [])
+          .eq('issue_id', issueId)
+          .eq('result', 'FAILED')
+          .order('verified_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (failureError) throw failureError
+        setLatestFailure(failureData)
+
+        if (failureData) {
+          const { data: evidenceData, error: evidenceError } = await supabase
+            .from('qa_verification_attachments')
+            .select('*')
+            .eq('qa_verification_id', failureData.id)
+            .order('created_at', { ascending: true })
+          if (evidenceError) throw evidenceError
+          setLatestFailureAttachments(await resolveAttachmentUrls(evidenceData ?? []))
+        } else {
+          setLatestFailureAttachments([])
+        }
       } else {
+        setLatestFailure(null)
         setLatestFailureAttachments([])
       }
-    } else {
-      setLatestFailure(null)
-      setLatestFailureAttachments([])
-    }
 
-    setLoading(false)
+    } catch {
+      setLoadError('Unable to load this issue or its evidence. Check your connection and retry.')
+    } finally {
+      setLoading(false)
+    }
   }, [issueId, setCurrentProjectId])
 
   useEffect(() => {
     load()
+  }, [load])
+
+  useEffect(() => {
+    const timer = setInterval(() => void load(), 240_000)
+    return () => clearInterval(timer)
   }, [load])
 
   useRealtimeSync({
@@ -414,27 +448,31 @@ function IssueDetail() {
       return
     }
 
-    for (const file of verificationFiles) {
-      try {
-        const uploadResult = await uploadToCloudinary(file, `trackqa/qa/${verificationId}`)
-        await supabase.from('qa_verification_attachments').insert({
-          qa_verification_id: verificationId,
-          uploaded_by: user.id,
-          storage_path: uploadResult.url,
-          file_name: file.name,
-          mime_type: file.type || null,
-          file_size_bytes: uploadResult.bytes,
-        })
-      } catch {
-        // Verification was already recorded
-      }
+    const failedFiles = await uploadFiles(verificationFiles, (file) =>
+      saveIssueAttachment(file, issue.project_id, issue.id, user.id, verificationId))
+    if (failedFiles.length) {
+      setPendingEvidence((previous) => [...previous, { files: failedFiles, verificationId }])
     }
-
     setVerifying(false)
     setVerification('')
     setVerificationFiles([])
     invalidateProjectCache(issue.project_id)
-    load()
+    void load()
+  }
+
+  const retryEvidence = async () => {
+    if (!pendingEvidence.length || !issue || !user) return
+    setUploadingAttachment(true)
+    const failedBatches: typeof pendingEvidence = []
+    for (const batch of pendingEvidence) {
+      const files = await uploadFiles(batch.files, (file) =>
+        saveIssueAttachment(file, issue.project_id, issue.id, user.id, batch.verificationId))
+      if (files.length) failedBatches.push({ ...batch, files })
+    }
+    // Preserve any later verification's failed uploads queued during this retry.
+    setPendingEvidence((previous) => [...failedBatches, ...previous.slice(pendingEvidence.length)])
+    setUploadingAttachment(false)
+    void load()
   }
 
   const handlePostComment = async (e: FormEvent) => {
@@ -509,16 +547,7 @@ function IssueDetail() {
     setUploadingAttachment(true)
     setAttachmentError(null)
     try {
-      const result = await uploadToCloudinary(file, `trackqa/issues/${issue.id}`)
-      const { error } = await supabase.from('issue_attachments').insert({
-        issue_id: issue.id,
-        uploaded_by: user.id,
-        storage_path: result.url,
-        file_name: file.name,
-        mime_type: file.type || null,
-        file_size_bytes: result.bytes,
-      })
-      if (error) throw error
+      await saveIssueAttachment(file, issue.project_id, issue.id, user.id)
       load()
     } catch (err) {
       setAttachmentError(err instanceof Error ? err.message : 'Upload failed')
@@ -541,6 +570,11 @@ function IssueDetail() {
         if (error) {
           setAttachmentError(error.message)
           return
+        }
+        const attachment = attachments.find((a) => a.id === attachmentId)
+        if (attachment) {
+          try { await removeAttachmentFile(attachment.storage_path) }
+          catch { setAttachmentError('Attachment removed from the issue, but file cleanup failed.') }
         }
         setAttachments((prev) => prev.filter((a) => a.id !== attachmentId))
       },
@@ -572,7 +606,11 @@ function IssueDetail() {
     })
   }
 
-  if (loading) {
+  if (loadError && !issue) {
+    return <div className="p-lg"><LoadError message={loadError} onRetry={() => void load()} /></div>
+  }
+
+  if (loading && !issue) {
     return (
       <div className="flex min-h-screen bg-surface">
         <Sidebar />
@@ -784,6 +822,15 @@ function IssueDetail() {
             </div>
           </div>
 
+          <LoadError message={loadError} onRetry={() => void load()} />
+          {pendingEvidence.length > 0 && (
+            <div role="alert" className="mb-md rounded-md border border-error/30 bg-error-container p-md text-on-error-container">
+              <p>The issue or QA result was saved, but these files were not attached: {pendingEvidence.flatMap((batch) => batch.files).map((file) => file.name).join(', ')}.</p>
+              <button type="button" disabled={uploadingAttachment} onClick={() => void retryEvidence()} className="mt-sm underline disabled:opacity-50">
+                {uploadingAttachment ? 'Retrying uploads...' : 'Retry failed uploads'}
+              </button>
+            </div>
+          )}
           {actionError && (
             <div className="mb-md flex items-center gap-xs rounded-md border border-rose-500/30 bg-rose-500/10 p-sm text-body-md text-rose-800 dark:text-rose-300">
               <AlertCircle size={16} className="shrink-0" />
@@ -954,7 +1001,7 @@ function IssueDetail() {
                               type="button"
                               onClick={() =>
                                 setPreviewImage({
-                                  url: a.storage_path,
+                                  url: a.url,
                                   title: a.file_name,
                                   size: formatBytes(a.file_size_bytes),
                                 })
@@ -963,7 +1010,7 @@ function IssueDetail() {
                               title="Click to preview image"
                             >
                               <img
-                                src={a.storage_path}
+                                src={a.url}
                                 alt={a.file_name}
                                 className="h-16 w-24 object-cover group-hover:scale-105 transition-transform"
                               />
@@ -971,7 +1018,7 @@ function IssueDetail() {
                           ) : (
                             <a
                               key={a.id}
-                              href={a.storage_path}
+                              href={a.url}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-xs rounded border border-rose-500/30 bg-surface-container-lowest px-sm py-xs font-mono text-code-xs text-on-surface hover:underline"
@@ -1259,7 +1306,7 @@ function IssueDetail() {
                               type="button"
                               onClick={() =>
                                 setPreviewImage({
-                                  url: a.storage_path,
+                                  url: a.url,
                                   title: a.file_name,
                                   size: formatBytes(a.file_size_bytes),
                                   uploader: a.uploader?.full_name ?? undefined,
@@ -1269,7 +1316,7 @@ function IssueDetail() {
                               title="Click to preview image"
                             >
                               <img
-                                src={a.storage_path}
+                                src={a.url}
                                 alt={a.file_name}
                                 className="h-9 w-9 object-cover group-hover:scale-110 transition-transform"
                               />
@@ -1285,7 +1332,7 @@ function IssueDetail() {
                                 type="button"
                                 onClick={() =>
                                   setPreviewImage({
-                                    url: a.storage_path,
+                                    url: a.url,
                                     title: a.file_name,
                                     size: formatBytes(a.file_size_bytes),
                                     uploader: a.uploader?.full_name ?? undefined,
@@ -1298,7 +1345,7 @@ function IssueDetail() {
                               </button>
                             ) : (
                               <a
-                                href={a.storage_path}
+                                href={a.url}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="block truncate font-mono text-code-xs font-semibold text-on-surface hover:text-primary transition-colors"
@@ -1599,7 +1646,7 @@ function IssueDetail() {
 
       {/* Edit Issue Modal */}
       {editModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md animate-in fade-in duration-100">
+        <div ref={editDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Edit issue" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md animate-in fade-in duration-100">
           <div
             className="fixed inset-0"
             onClick={() => !savingEdit && setEditModalOpen(false)}

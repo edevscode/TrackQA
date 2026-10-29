@@ -1,3 +1,4 @@
+import LoadError from '../components/LoadError'
 import {
   ArrowRight,
   Calendar,
@@ -98,6 +99,7 @@ function timeAgo(iso: string) {
 }
 
 function Dashboard() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const { profile } = useAuth()
   const { currentProject } = useProject()
 
@@ -121,6 +123,7 @@ function Dashboard() {
         setLoading(true)
       }
 
+      setLoadError(null)
       try {
         const [data] = await Promise.all([
           fetchDashboardData(currentProject.id, userId, { forceRefresh }),
@@ -129,6 +132,8 @@ function Dashboard() {
         setStats(data.stats)
         setRecentIssues(data.recentIssues)
         setMyTasks(data.myTasks)
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
         setLoading(false)
         setRefreshing(false)
@@ -175,6 +180,7 @@ function Dashboard() {
         <TopBar />
 
         <main className="flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void loadData(true)} />
           {/* Workbench Header Strip */}
           <div className="mb-lg flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between border-b border-outline-variant pb-md">
             <div>

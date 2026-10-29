@@ -1,6 +1,7 @@
 import { RotateCw, X } from 'lucide-react'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 export type ConfirmVariant = 'danger' | 'warning' | 'primary'
 
@@ -28,6 +29,7 @@ export default function ConfirmModal({
   variant = 'danger',
   isLoading = false,
 }: ConfirmModalProps) {
+  const dialogRef = useDialogFocus(open)
   useEffect(() => {
     if (!open) return
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -50,6 +52,8 @@ export default function ConfirmModal({
   return (
     <div
       role="dialog"
+      ref={dialogRef}
+      tabIndex={-1}
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-md"

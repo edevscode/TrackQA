@@ -1,3 +1,5 @@
+import LoadError from '../components/LoadError'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import {
   Check,
   ChevronDown,
@@ -59,6 +61,7 @@ const roleBadgeConfig: Record<ProjectRole, { label: string; className: string }>
 type MemberRow = MemberListItem
 
 function Members() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user } = useAuth()
   const { currentProject, refreshProjects } = useProject()
@@ -100,6 +103,9 @@ function Members() {
   }
 
   const [inviteOpen, setInviteOpen] = useState(false)
+  const inviteDialogRef = useDialogFocus(inviteOpen, () => {
+    if (!inviting) setInviteOpen(false)
+  })
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<ProjectRole>('DEVELOPER')
   const [inviteError, setInviteError] = useState<string | null>(null)
@@ -116,10 +122,13 @@ function Members() {
         setLoading(true)
       }
 
+      setLoadError(null)
       try {
         const res = await fetchMembersData(currentProject.id, { forceRefresh })
         setMembers(res.members)
         setPendingInvitations(res.pendingInvitations)
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
         setLoading(false)
       }
@@ -308,6 +317,7 @@ function Members() {
         <TopBar />
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void load(true)} />
           {/* Header Bar */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -596,6 +606,8 @@ function Members() {
       {inviteOpen && (
         <div
           role="dialog"
+          ref={inviteDialogRef}
+          tabIndex={-1}
           aria-modal="true"
           aria-labelledby="invite-modal-title"
           className="fixed inset-0 z-50 flex items-center justify-center p-md bg-black/50 animate-in fade-in duration-100"

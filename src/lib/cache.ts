@@ -10,78 +10,9 @@ import type {
   ProjectRole,
 } from './database.types'
 
-type CacheEntry<T> = {
-  data: T
-  timestamp: number
-  ttl: number
-}
+import { MemoryCache } from './memoryCache'
 
-const DEFAULT_TTL_MS = 60 * 1000 // 60 seconds default cache TTL
-
-export type CacheInvalidationListener = (pattern?: string | RegExp) => void
-
-class MemoryCache {
-  private cache = new Map<string, CacheEntry<unknown>>()
-  private listeners = new Set<CacheInvalidationListener>()
-
-  get<T>(key: string): T | null {
-    const entry = this.cache.get(key) as CacheEntry<T> | undefined
-    if (!entry) return null
-
-    const isExpired = Date.now() - entry.timestamp > entry.ttl
-    if (isExpired) {
-      this.cache.delete(key)
-      return null
-    }
-
-    return entry.data
-  }
-
-  set<T>(key: string, data: T, ttl: number = DEFAULT_TTL_MS): void {
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now(),
-      ttl,
-    })
-  }
-
-  delete(key: string): void {
-    this.cache.delete(key)
-  }
-
-  subscribe(listener: CacheInvalidationListener): () => void {
-    this.listeners.add(listener)
-    return () => {
-      this.listeners.delete(listener)
-    }
-  }
-
-  invalidate(patternOrPrefix?: string | RegExp): void {
-    if (!patternOrPrefix) {
-      this.cache.clear()
-    } else {
-      const regex =
-        patternOrPrefix instanceof RegExp
-          ? patternOrPrefix
-          : new RegExp(`^${patternOrPrefix}`)
-
-      for (const key of this.cache.keys()) {
-        if (regex.test(key)) {
-          this.cache.delete(key)
-        }
-      }
-    }
-
-    // Notify all active listeners
-    for (const listener of this.listeners) {
-      try {
-        listener(patternOrPrefix)
-      } catch (err) {
-        console.error('Cache listener error:', err)
-      }
-    }
-  }
-}
+const DEFAULT_TTL_MS = 60 * 1000
 
 export const queryCache = new MemoryCache()
 
@@ -148,6 +79,7 @@ export async function fetchDashboardData(
   userId: string,
   options?: { forceRefresh?: boolean; ttlMs?: number },
 ): Promise<DashboardData> {
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `dashboard:${projectId}:${userId}`
 
   if (!options?.forceRefresh) {
@@ -179,13 +111,17 @@ export async function fetchDashboardData(
       .limit(3),
   ])
 
+  for (const response of [statsRes, issuesRes, tasksRes]) {
+    if (response.error) throw response.error
+  }
+
   const result: DashboardData = {
     stats: statsRes.data ?? null,
     recentIssues: (issuesRes.data as unknown as DashboardRecentIssue[]) ?? [],
     myTasks: (tasksRes.data as unknown as DashboardTask[]) ?? [],
   }
 
-  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS)
+  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return result
 }
 
@@ -231,6 +167,7 @@ export async function fetchIssuesData(
     search: params.search?.trim() || '',
   }
 
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `issues:${projectId}:${JSON.stringify(normalizedParams)}`
 
   if (!options?.forceRefresh) {
@@ -259,16 +196,18 @@ export async function fetchIssuesData(
     query = query.ilike('title', `%${normalizedParams.search}%`)
   }
 
-  const { data, count } = await query
+  const { data, count, error } = await query
     .order('issue_number', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1)
+
+  if (error) throw error
 
   const result: IssuesResponse = {
     issues: (data as unknown as IssueListItem[]) ?? [],
     totalCount: count ?? 0,
   }
 
-  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS)
+  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return result
 }
 
@@ -300,6 +239,7 @@ export async function fetchMyTasksData(
   tab: 'assigned' | 'reported',
   options?: { forceRefresh?: boolean; ttlMs?: number },
 ): Promise<MyTasksItem[]> {
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `mytasks:${projectId}:${userId}:${tab}`
 
   if (!options?.forceRefresh) {
@@ -320,10 +260,11 @@ export async function fetchMyTasksData(
     query = query.eq('reporter_id', userId)
   }
 
-  const { data } = await query.order('updated_at', { ascending: false })
+  const { data, error } = await query.order('updated_at', { ascending: false })
+  if (error) throw error
   const result = (data as MyTasksItem[]) ?? []
 
-  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS)
+  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return result
 }
 
@@ -355,6 +296,7 @@ export async function fetchMembersData(
   projectId: string,
   options?: { forceRefresh?: boolean; ttlMs?: number },
 ): Promise<MembersResponse> {
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `members:${projectId}`
 
   if (!options?.forceRefresh) {
@@ -378,6 +320,10 @@ export async function fetchMembersData(
       .eq('status', 'PENDING')
       .order('created_at', { ascending: false }),
   ])
+
+  for (const response of [membersRes, statsRes, invitationsRes]) {
+    if (response.error) throw response.error
+  }
 
   const statsByUser = new Map(
     (statsRes.data ?? []).map((s) => [s.user_id, s.assigned_issues]),
@@ -404,7 +350,7 @@ export async function fetchMembersData(
     pendingInvitations: (invitationsRes.data as ProjectInvitation[]) ?? [],
   }
 
-  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS)
+  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return result
 }
 
@@ -433,6 +379,7 @@ export async function fetchNotificationsData(
   userId: string,
   options?: { forceRefresh?: boolean; ttlMs?: number },
 ): Promise<EnrichedNotificationItem[]> {
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `notifications:${userId}`
 
   if (!options?.forceRefresh) {
@@ -440,16 +387,18 @@ export async function fetchNotificationsData(
     if (cached) return cached
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('notifications')
     .select(
       '*, actor:profiles!notifications_actor_id_fkey(full_name, avatar_url), project:projects!notifications_project_id_fkey(name, key), issue:issues!notifications_issue_id_fkey(id, issue_number, title, status, priority)',
     )
+    .eq('recipient_id', userId)
     .order('created_at', { ascending: false })
     .limit(100)
 
+  if (error) throw error
   const result = (data as unknown as EnrichedNotificationItem[]) ?? []
-  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS)
+  queryCache.set(cacheKey, result, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return result
 }
 
@@ -474,6 +423,7 @@ export async function fetchProjectSettingsData(
   projectId: string,
   options?: { forceRefresh?: boolean; ttlMs?: number },
 ): Promise<ProjectSettingsMember[]> {
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `project_settings:${projectId}`
 
   if (!options?.forceRefresh) {
@@ -481,11 +431,12 @@ export async function fetchProjectSettingsData(
     if (cached) return cached
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('project_members')
     .select('user_id, role, profiles(full_name, avatar_url, email)')
     .eq('project_id', projectId)
 
+  if (error) throw error
   const rows: ProjectSettingsMember[] = (data ?? []).map((d: any) => ({
     user_id: d.user_id,
     role: d.role,
@@ -494,7 +445,7 @@ export async function fetchProjectSettingsData(
     email: d.profiles?.email ?? '',
   }))
 
-  queryCache.set(cacheKey, rows, options?.ttlMs ?? DEFAULT_TTL_MS)
+  queryCache.set(cacheKey, rows, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   return rows
 }
 
@@ -511,6 +462,7 @@ export async function fetchNotificationPreferences(
   userId: string,
   options?: { forceRefresh?: boolean; ttlMs?: number },
 ): Promise<NotificationPreferences | null> {
+  const scopeVersion = queryCache.scopeVersion
   const cacheKey = `account_preferences:${userId}`
 
   if (!options?.forceRefresh) {
@@ -518,14 +470,15 @@ export async function fetchNotificationPreferences(
     if (cached) return cached
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('notification_preferences')
     .select('*')
     .eq('user_id', userId)
-    .single()
+    .maybeSingle()
 
+  if (error) throw error
   if (data) {
-    queryCache.set(cacheKey, data, options?.ttlMs ?? DEFAULT_TTL_MS)
+    queryCache.set(cacheKey, data, options?.ttlMs ?? DEFAULT_TTL_MS, scopeVersion)
   }
   return data
 }

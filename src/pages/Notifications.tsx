@@ -1,3 +1,4 @@
+import LoadError from '../components/LoadError'
 import { ArrowLeft, CheckCheck, ExternalLink, Filter } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -78,6 +79,7 @@ type NotificationThread = {
 }
 
 function Notifications() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const { user } = useAuth()
   const { currentProject } = useProject()
 
@@ -113,10 +115,13 @@ function Notifications() {
         setLoading(true)
       }
 
+      setLoadError(null)
       try {
         const data = await fetchNotificationsData(user.id, { forceRefresh })
         setNotifications(data)
         hasLoadedOnceRef.current = true
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
         setLoading(false)
       }
@@ -318,6 +323,7 @@ function Notifications() {
         <TopBar />
 
         <main className="mx-auto w-full max-w-[1280px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void load(true)} />
           {activeThread ? (
             /* Full-Page Thread View Mode */
             <div className="flex flex-col gap-md animate-in fade-in duration-100">

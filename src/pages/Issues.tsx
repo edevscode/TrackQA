@@ -1,3 +1,4 @@
+import LoadError from '../components/LoadError'
 import {
   ChevronDown,
   ChevronLeft,
@@ -93,6 +94,7 @@ function timeAgo(iso: string) {
 }
 
 function Issues() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user } = useAuth()
   const { currentProject } = useProject()
@@ -155,6 +157,7 @@ function Issues() {
         setLoading(true)
       }
 
+      setLoadError(null)
       try {
         const [res] = await Promise.all([
           fetchIssuesData(currentProject.id, params, { forceRefresh }),
@@ -162,6 +165,8 @@ function Issues() {
         ])
         setIssues(res.issues)
         setTotalCount(res.totalCount)
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
         setLoading(false)
         setRefreshing(false)
@@ -210,6 +215,7 @@ function Issues() {
         <TopBar />
 
         <main className="flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void loadIssues(true)} />
           {/* Header Bar */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>

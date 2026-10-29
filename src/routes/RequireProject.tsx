@@ -3,10 +3,11 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
+import LoadError from '../components/LoadError'
 
 function RequireProject() {
   const { user, loading: authLoading } = useAuth()
-  const { currentProject, loading } = useProject()
+  const { currentProject, loading, error, refreshProjects } = useProject()
   const [hasPendingInvite, setHasPendingInvite] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -23,6 +24,8 @@ function RequireProject() {
   }, [loading, currentProject, user?.email])
 
   const stillCheckingInvites = !loading && !currentProject && hasPendingInvite === null
+
+  if (error) return <div className="p-lg"><LoadError message={error} onRetry={() => void refreshProjects()} /></div>
 
   if (authLoading || loading || stillCheckingInvites) {
     return (

@@ -1,3 +1,4 @@
+import LoadError from '../components/LoadError'
 import {
   ArrowUpDown,
   Check,
@@ -153,6 +154,7 @@ function timeAgo(iso: string) {
 }
 
 function MyTasks() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const { user } = useAuth()
   const { currentProject } = useProject()
 
@@ -203,11 +205,14 @@ function MyTasks() {
         setLoading(true)
       }
 
+      setLoadError(null)
       try {
         const data = await fetchMyTasksData(currentProject.id, user.id, tab, {
           forceRefresh,
         })
         setTasks(data)
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
       } finally {
         setLoading(false)
       }
@@ -293,6 +298,7 @@ function MyTasks() {
         <TopBar />
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void loadTasks(true)} />
           {/* Header & Filter Controls */}
           <div className="mb-md flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>

@@ -1,3 +1,4 @@
+import LoadError from '../components/LoadError'
 import { Bell, ChevronRight, Lock, Mail, Pencil, Upload, User } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
@@ -42,6 +43,7 @@ function Toggle({
 }
 
 function AccountSettings() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const { user, profile, refreshProfile, updatePassword } = useAuth()
   const [tab, setTab] = useState('Profile Details')
 
@@ -88,8 +90,13 @@ function AccountSettings() {
   const loadPreferences = useCallback(
     async (forceRefresh = false) => {
       if (!user) return
-      const data = await fetchNotificationPreferences(user.id, { forceRefresh })
-      setPrefs(data)
+      setLoadError(null)
+      try {
+        const data = await fetchNotificationPreferences(user.id, { forceRefresh })
+        setPrefs(data)
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
+      }
     },
     [user],
   )
@@ -207,6 +214,7 @@ function AccountSettings() {
         <TopBar />
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void loadPreferences(true)} />
           {/* Header */}
           <div className="mb-md">
             <h1 className="text-headline-xl font-bold tracking-tight text-on-surface">

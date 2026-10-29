@@ -1,3 +1,5 @@
+import { uploadFiles } from '../lib/uploadBatch'
+import { saveIssueAttachment } from '../lib/attachments'
 import {
   ChevronRight,
   ChevronsUp,
@@ -16,7 +18,7 @@ import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
-import { MAX_UPLOAD_BYTES, uploadToCloudinary } from '../lib/cloudinary'
+import { MAX_UPLOAD_BYTES } from '../lib/cloudinary'
 import { supabase } from '../lib/supabase'
 import type { IssuePriority } from '../lib/database.types'
 import { clearIssueDraft, getIssueDraft, setIssueDraft } from '../lib/issueDraftStore'
@@ -180,25 +182,12 @@ function CreateIssue() {
       return
     }
 
-    for (const file of pendingFiles) {
-      try {
-        const result = await uploadToCloudinary(file, `trackqa/issues/${data.id}`)
-        await supabase.from('issue_attachments').insert({
-          issue_id: data.id,
-          uploaded_by: user.id,
-          storage_path: result.url,
-          file_name: file.name,
-          mime_type: file.type || null,
-          file_size_bytes: result.bytes,
-        })
-      } catch {
-        // Continue silently if single attachment fails; can be re-uploaded on detail
-      }
-    }
+    const failedAttachments = await uploadFiles(pendingFiles, (file) =>
+      saveIssueAttachment(file, currentProject.id, data.id, user.id))
 
     clearIssueDraft()
     invalidateProjectCache(currentProject.id)
-    navigate(`/issues/${data.id}`)
+    navigate(`/issues/${data.id}`, { state: { failedAttachments } })
   }
 
   const handleCancel = () => {

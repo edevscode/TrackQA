@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, useParams } from 'react-router-dom'
 import ProtectedRoute from './routes/ProtectedRoute'
 import PublicOnlyRoute from './routes/PublicOnlyRoute'
 import RequireProject from './routes/RequireProject'
@@ -23,6 +23,11 @@ import ArchivedProjects from './pages/ArchivedProjects'
 import Support from './pages/Support'
 import Landing from './pages/Landing'
 import NotFound from './pages/NotFound'
+
+function IssueDetailRoute() {
+  const { issueId } = useParams()
+  return <IssueDetail key={issueId} />
+}
 
 function App() {
   return (
@@ -49,7 +54,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/issues" element={<Issues />} />
           <Route path="/issues/new" element={<CreateIssue />} />
-          <Route path="/issues/:issueId" element={<IssueDetail />} />
+          <Route path="/issues/:issueId" element={<IssueDetailRoute />} />
           <Route path="/my-tasks" element={<MyTasks />} />
           <Route path="/members" element={<Members />} />
           <Route path="/notifications" element={<Notifications />} />

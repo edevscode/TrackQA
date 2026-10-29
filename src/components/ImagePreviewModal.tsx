@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { X, Download, ExternalLink, ZoomIn, ZoomOut, RotateCw } from 'lucide-react'
 import { useState } from 'react'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 
 export interface PreviewImage {
   url: string
@@ -15,6 +16,7 @@ interface ImagePreviewModalProps {
 }
 
 export default function ImagePreviewModal({ image, onClose }: ImagePreviewModalProps) {
+  const dialogRef = useDialogFocus(!!image)
   const [scale, setScale] = useState(1)
   const [rotation, setRotation] = useState(0)
 
@@ -67,6 +69,8 @@ export default function ImagePreviewModal({ image, onClose }: ImagePreviewModalP
   return (
     <div
       role="dialog"
+      ref={dialogRef}
+      tabIndex={-1}
       aria-modal="true"
       aria-label="Image Preview"
       className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-black/85 backdrop-blur-sm animate-in fade-in duration-150 select-none p-4 sm:p-6"

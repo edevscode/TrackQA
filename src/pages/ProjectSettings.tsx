@@ -1,3 +1,4 @@
+import LoadError from '../components/LoadError'
 import {
   AlertTriangle,
   Check,
@@ -49,6 +50,7 @@ const roleBadgeConfig: Record<ProjectRole, { label: string; className: string }>
 }
 
 function ProjectSettings() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user } = useAuth()
   const { currentProject, projects, refreshProjects, setCurrentProjectId } = useProject()
@@ -112,8 +114,13 @@ function ProjectSettings() {
   const loadMembers = useCallback(
     async (forceRefresh = false) => {
       if (!currentProject) return
-      const rows = await fetchProjectSettingsData(currentProject.id, { forceRefresh })
-      setMembers(rows)
+      setLoadError(null)
+      try {
+        const rows = await fetchProjectSettingsData(currentProject.id, { forceRefresh })
+        setMembers(rows)
+      } catch {
+        setLoadError('Unable to load data. Check your connection and retry.')
+      }
 
       if (user?.id) {
         prefetchAccountSettingsData(user.id)
@@ -304,6 +311,7 @@ function ProjectSettings() {
         <TopBar />
 
         <main className="mx-auto w-full max-w-[1360px] flex-1 px-md py-md lg:px-lg lg:py-lg">
+          <LoadError message={loadError} onRetry={() => void loadMembers(true)} />
           {/* Header */}
           <div className="mb-md">
             <div className="flex items-center gap-xs">
