@@ -54,6 +54,7 @@ export type Profile = {
 }
 
 export type Project = {
+  mcp_enabled: boolean
   timezone: string
   id: string
   name: string
@@ -74,6 +75,19 @@ export type ProjectMember = {
   user_id: string
   role: ProjectRole
   created_at: string
+}
+
+// Browser-safe metadata only. token_hash is intentionally absent.
+export type McpConnection = {
+  id: string
+  project_id: string
+  user_id: string | null
+  approved_by: string | null
+  client_label: string
+  token_expires_at: string
+  created_at: string
+  updated_at: string
+  revoked_at: string | null
 }
 
 export type ProjectInvitation = {
@@ -259,6 +273,12 @@ export type MemberStats = {
 export type Database = {
   public: {
     Tables: {
+      mcp_connections: {
+        Row: McpConnection
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: []
+      }
       ai_findings: {
         Row: AiFinding
         Insert: Record<string, never>
@@ -523,6 +543,14 @@ export type Database = {
       v_member_stats: { Row: MemberStats; Relationships: [] }
     }
     Functions: {
+      issue_mcp_connection_token: {
+        Args: { p_project_id: string; p_user_id: string; p_client_label: string }
+        Returns: { connection_id: string; access_token: string }[]
+      }
+      revoke_mcp_connection: {
+        Args: { p_connection_id: string }
+        Returns: undefined
+      }
       review_ai_finding: {
         Args: { p_finding_id: string; p_decision: 'CONFIRMED' | 'REJECTED'; p_review_note?: string | null }
         Returns: FindingReceipt[]

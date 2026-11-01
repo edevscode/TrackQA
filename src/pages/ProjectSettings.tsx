@@ -15,6 +15,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
 import MemberRoleControl from '../components/MemberRoleControl'
+import AiIntegrations from '../components/AiIntegrations'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
@@ -31,7 +32,7 @@ import {
 import { supabase } from '../lib/supabase'
 import type { ProjectRole } from '../lib/database.types'
 
-const tabs = ['General', 'Member Roles', 'Danger Zone']
+const tabs = ['General', 'Member Roles', 'AI Integrations', 'Danger Zone']
 
 type MemberRow = ProjectSettingsMember
 
@@ -59,10 +60,12 @@ function ProjectSettings() {
   const [tab, setTab] = useState('General')
   const generalRef = useRef<HTMLFormElement>(null)
   const memberRolesRef = useRef<HTMLDivElement>(null)
+  const aiIntegrationsRef = useRef<HTMLDivElement>(null)
   const dangerZoneRef = useRef<HTMLDivElement>(null)
   const sectionRefs: Record<string, RefObject<HTMLElement | null>> = {
     General: generalRef,
     'Member Roles': memberRolesRef,
+    'AI Integrations': aiIntegrationsRef,
     'Danger Zone': dangerZoneRef,
   }
 
@@ -337,7 +340,7 @@ function ProjectSettings() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-md lg:grid-cols-[220px_1fr]">
+          <div className="grid grid-cols-1 gap-md lg:grid-cols-[220px_minmax(0,1fr)]">
             {/* Navigation Tabs */}
             <div className="h-fit rounded-lg border border-outline-variant bg-surface-container-lowest p-xs space-y-xs">
               {tabs.map((t) => (
@@ -360,7 +363,7 @@ function ProjectSettings() {
             </div>
 
             {/* Content Pane */}
-            <div className="flex flex-col gap-md">
+            <div className="flex min-w-0 flex-col gap-md">
               {!isOwner && (
                 <div className="rounded-lg border border-outline-variant bg-surface-container-low p-sm text-body-md text-on-surface-variant">
                   You are viewing project settings in read-only mode. Only the project owner can update project parameters.
@@ -609,6 +612,10 @@ function ProjectSettings() {
                     )
                   })}
                 </div>
+              </div>
+
+              <div ref={aiIntegrationsRef} className="scroll-mt-md rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+                <AiIntegrations key={`${currentProject.id}:${user?.id}:${currentRole}`} project={currentProject} userId={user?.id ?? ''} role={currentRole} members={members} />
               </div>
 
               {/* Danger Zone */}
