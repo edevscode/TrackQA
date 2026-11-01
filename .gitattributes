@@ -1,0 +1,13 @@
+# Preserve reviewed migration fingerprints and frozen MCP build inputs on checkout.
+supabase/migrations/*.sql text eol=lf
+# The independently reviewed original baseline used CRLF for these files.
+supabase/migrations/000*.sql text eol=crlf
+supabase/migrations/001*.sql text eol=crlf
+supabase/migrations/0020_*.sql text eol=crlf
+supabase/migrations/0030_*.sql text eol=crlf
+supabase/functions/trackqa-mcp/** text eol=lf
+# Retain the existing CRLF fixture bytes without changing its reviewed source.
+supabase/functions/trackqa-mcp/deno-tests/entrypoint-fixture.ts -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+supabase/config.toml text eol=lf
+supabase/.gitignore text eol=lf
+tools/mcp-pilot/** text eol=lf

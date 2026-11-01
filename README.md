@@ -4,6 +4,25 @@ A QA issue tracker built with React, TypeScript, Vite, and Supabase. Issues foll
 `OPEN → IN_PROGRESS → FOR_TESTING → PASSED / FAILED → DONE`, with failed issues
 returning to development before another verification.
 
+## MCP release milestone
+
+The deployed integration supports project-scoped bearer authentication, four
+read tools, AI finding submission and human QA/Owner confirmation or rejection.
+Owners manage enablement and revocable connections in **Project Settings ->
+AI Integrations**; reviewers use **AI Findings**. Codex live integration and the
+hosted synthetic write/review path passed. Claude Code/generic live testing and
+a fully manual terminal-handoff check remain deferred. The public endpoint has
+no verified inbound rate limiter; UI-issued tokens default to 90 days and must
+be explicitly revoked when access is no longer required.
+
+See the [current MCP release and setup guide](supabase/functions/trackqa-mcp/README.md)
+and [Phase 2 deployment/test record](supabase/functions/trackqa-mcp/PHASE2.md).
+A reproducible release snapshot includes the reviewed MCP backend, lockfiles,
+Supabase configuration, migrations and supporting tests/helpers. Generated
+bundles, credentials and local session state remain excluded. See the release
+guide for the pinned build process; committing a snapshot does not authorize
+migrations, deployment or MCP activation.
+
 ## Local development
 
 Use Node.js 22.19 or later and npm. Run `npm ci`, copy `.env.example` to `.env`,

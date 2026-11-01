@@ -1,0 +1,21 @@
+{
+  "name": "trackqa-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "verify:bundle": "node build.mjs --verify",
+    "test:admission-sql": "node --test --experimental-test-isolation=none tests/request-admission-sql.test.mjs",
+    "test:bundle": "node --test --experimental-test-isolation=none tests/bundle.test.mjs",
+    "test": "node --experimental-strip-types --experimental-test-isolation=none --test tests/*.test.ts",
+    "check": "node ../../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
+  }
+}

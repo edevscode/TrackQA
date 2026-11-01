@@ -1,6 +1,34 @@
-# Antigravity synthetic pilot handoff
+# TrackQA MCP pilot helpers and developer onboarding
 
-## Codex connection check
+## Current release milestone - closed 2026-11-02
+
+The five-tool MCP service, AI Findings review and guided onboarding are deployed.
+See the [current release guide](../../supabase/functions/trackqa-mcp/README.md)
+and [hosted Phase 2 evidence](../../supabase/functions/trackqa-mcp/PHASE2.md).
+Owners normally use production Project Settings -> AI Integrations; the helpers
+below are retained for explicitly approved, bounded pilot authentication/recovery.
+They are not required for ordinary developer setup and are not unattended tests.
+
+Phase 3B used a real Google Owner and production UI to issue one connection.
+Native Codex loaded the UI-generated configuration unchanged, discovered all
+five tools and successfully read connection status, the authorized project and
+its issues. Access lasted 11 seconds. Revocation, old-token 401 rejection,
+project disablement, configuration removal and temporary Owner sign-out were
+verified. All nine projects were disabled afterward with zero active connections.
+
+The system-browser Google PKCE helper was used after automated-browser Google
+login was blocked; no synthetic browser identity or mocked backend was used.
+The manual terminal-paste sequence was not exercised end-to-end. Claude Code
+and generic-client live verification remain deferred. No inbound abuse quota
+has been verified; a public URL is not a private pilot boundary. Default token
+expiry remains 90 days and short sessions require explicit revocation.
+
+Antigravity preparation instructions later in this file describe the historical
+pilot only. They are not the regular onboarding path or a request to revisit
+its MCP Manager problem. None of these records authorizes activation or tokens.
+
+
+## Historical four-read-tool Codex helper
 
 The controlled hosted completion test passed using the installed Codex client:
 initialization, discovery of four tools, and `trackqa_list_issues` returning the
@@ -37,7 +65,7 @@ Supabase database/service key. This configuration does not issue a token or gran
 access itself. Remove temporary process credentials and revoke pilot connections
 at completion. Configuration reference: https://developers.openai.com/codex/mcp/.
 
-## Regular developer onboarding (Phase 3A, local implementation)
+## Deployed regular developer onboarding (Phase 3A)
 
 Project Settings → AI Integrations uses the existing Owner-only project update,
 `issue_mcp_connection_token` and `revoke_mcp_connection` workflows. No migration,
@@ -87,11 +115,14 @@ were exercised with a mocked prompt/client to verify environment cleanup on
 success and failure; the Bash launcher passed syntax checking. The actual setup
 guide rendered without horizontal page overflow at 375px and 1440px using the
 existing browser tooling with all page network requests blocked. These checks
-do not claim a live Claude connection or a hosted test of the new controls.
+do not claim a live Claude connection. The later Phase 3B production controls
+and native Codex connection passed as recorded above; manual prompt entry remains
+unverified end-to-end.
 
-Local preparation only. This helper does not enable a project, activate an MCP
-configuration, create a project/user/issue, deploy a function or run SQL. No new
-dependencies are used: Node 22 and Windows PowerShell 5.1 are already installed.
+The Prepare mode below is local only. Separately approved Issue/Cleanup modes
+can change the fixed synthetic fixture and its connections, as documented below;
+never treat a historical test approval as authorization to run them again. No
+new dependencies are used: Node 22 and Windows PowerShell 5.1 are already installed.
 
 ## Local preparation and tests
 

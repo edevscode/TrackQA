@@ -4,6 +4,8 @@ import { PGlite } from '@electric-sql/pglite'
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 import { seedLegacyDeadlines, assertLegacyDeadlineMigration } from './legacy-deadlines.fixture.mjs'
 import { seedLegacyResponsibilities, assertLegacyResponsibilities } from './legacy-responsibilities.fixture.mjs'
+import { assertMcpPermissions } from './mcp-permissions.fixture.mjs'
+import { assertAiFindings } from './ai-findings.fixture.mjs'
 
 // Supabase-owned services are represented by minimal auth/storage schemas.
 // Application migrations, RLS, triggers, and SQL regressions run unmodified.
@@ -34,6 +36,7 @@ test('PostgreSQL migrations and authorization/deadline regressions', async (t) =
       grant select, insert, update, delete on all tables in schema storage to authenticated;
       create publication supabase_realtime;
     `)
+    t.diagnostic(`In-memory PGlite PostgreSQL ${(await db.query('show server_version')).rows[0].server_version}; managed Auth/Storage are test stubs, not hosted Supabase.`)
     let legacyFixture
     let responsibilityFixture
     for (const name of (await readdir(new URL('../supabase/migrations/', import.meta.url))).sort()) {
@@ -59,6 +62,8 @@ test('PostgreSQL migrations and authorization/deadline regressions', async (t) =
         })
       }
     }
+    await assertMcpPermissions(db, t)
+    await assertAiFindings(db, t)
     for (const name of (await readdir(new URL('../supabase/tests/', import.meta.url))).sort()) {
       if (!name.endsWith('.sql')) continue
       await t.test(`regression ${name}`, async () => {

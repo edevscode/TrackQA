@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@modelcontextprotocol/server": "npm:@modelcontextprotocol/server@2.4.0",
+    "zod": "npm:zod@4.6.7"
+  },
+  "lock": { "path": "./deno.lock", "frozen": true },
+  "nodeModulesDir": "none",
+  "compilerOptions": { "strict": true }
+}
