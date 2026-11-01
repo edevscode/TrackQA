@@ -12,6 +12,7 @@ import CreateProject from './pages/CreateProject'
 import JoinProject from './pages/JoinProject'
 import Dashboard from './pages/Dashboard'
 import Issues from './pages/Issues'
+import AiFindings from './pages/AiFindings'
 import CreateIssue from './pages/CreateIssue'
 import IssueDetail from './pages/IssueDetail'
 import MyTasks from './pages/MyTasks'
@@ -53,6 +54,7 @@ function App() {
         <Route element={<RequireProject />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/issues" element={<Issues />} />
+          <Route path="/ai-findings" element={<AiFindings />} />
           <Route path="/issues/new" element={<CreateIssue />} />
           <Route path="/issues/:issueId" element={<IssueDetailRoute />} />
           <Route path="/my-tasks" element={<MyTasks />} />

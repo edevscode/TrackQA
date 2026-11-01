@@ -1,5 +1,6 @@
 import {
   Bug,
+  ScanSearch,
   CircleCheck,
   HelpCircle,
   LayoutGrid,
@@ -20,6 +21,7 @@ import { useProject } from '../contexts/ProjectContext'
 const navItems = [
   { label: 'Dashboard', icon: LayoutGrid, to: '/dashboard' },
   { label: 'Issues', icon: Bug, to: '/issues' },
+  { label: 'AI Findings', icon: ScanSearch, to: '/ai-findings' },
   { label: 'My Tasks', icon: CircleCheck, to: '/my-tasks' },
   { label: 'Members', icon: Users, to: '/members' },
   { label: 'Project Settings', icon: Settings, to: '/project-settings' },
@@ -98,7 +100,7 @@ function Sidebar() {
 
         {/* Navigation Items */}
         <nav className={`flex flex-1 flex-col gap-0.5 ${collapsed ? 'px-xs' : 'px-sm'}`}>
-          {navItems.map(({ label, icon: Icon, to }) => (
+          {navItems.filter((item) => item.to !== '/ai-findings' || canReportIssues).map(({ label, icon: Icon, to }) => (
             <NavLink
               key={label}
               to={to}

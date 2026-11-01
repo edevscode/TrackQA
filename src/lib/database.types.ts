@@ -3,6 +3,27 @@ export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' |
 export type IssuePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type IssueStatus = 'OPEN' | 'IN_PROGRESS' | 'FOR_TESTING' | 'PASSED' | 'FAILED' | 'DONE'
 export type QaResult = 'PASSED' | 'FAILED'
+export type AiFinding = {
+  id: string
+  project_id: string
+  connection_id: string
+  submission_id: string
+  title: string
+  description: string
+  suggested_priority: IssuePriority
+  file_path: string | null
+  line_start: number | null
+  line_end: number | null
+  evidence_excerpt: string | null
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED'
+  reviewed_by: string | null
+  reviewed_at: string | null
+  review_note: string | null
+  issue_id: string | null
+  created_at: string
+  updated_at: string
+}
+export type FindingReceipt = Pick<AiFinding, 'id' | 'project_id' | 'status' | 'issue_id' | 'created_at'>
 export type ActivityAction =
   | 'CREATED'
   | 'ASSIGNED'
@@ -238,6 +259,18 @@ export type MemberStats = {
 export type Database = {
   public: {
     Tables: {
+      ai_findings: {
+        Row: AiFinding
+        Insert: Record<string, never>
+        Update: Record<string, never>
+        Relationships: [{
+          foreignKeyName: 'ai_findings_reviewed_by_fkey'
+          columns: ['reviewed_by']
+          isOneToOne: false
+          referencedRelation: 'profiles'
+          referencedColumns: ['id']
+        }]
+      }
       issue_deadline_history: {
         Row: DeadlineHistory
         Insert: Record<string, never>
@@ -490,6 +523,10 @@ export type Database = {
       v_member_stats: { Row: MemberStats; Relationships: [] }
     }
     Functions: {
+      review_ai_finding: {
+        Args: { p_finding_id: string; p_decision: 'CONFIRMED' | 'REJECTED'; p_review_note?: string | null }
+        Returns: FindingReceipt[]
+      }
       create_project: {
         Args: { p_name: string; p_key: string; p_description?: string | null }
         Returns: Project
