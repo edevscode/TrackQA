@@ -6,6 +6,8 @@ import os from 'node:os'
 import { connect, status, disconnect } from '../src/workflow.ts'
 import { Store } from '../src/state.ts'
 import { fingerprint, matchesEntry } from '../src/clients/codex.ts'
+import { matchesGeminiEntry } from '../src/clients/gemini.ts'
+import { geminiInstructions, geminiVerification } from '../src/clients/gemini-verify.ts'
 import { setupFor, ConnectorError } from '../src/core.ts'
 
 const PROJECT = '11111111-1111-4111-8111-111111111111'
@@ -20,21 +22,27 @@ async function fixture(t, options = {}) {
   const project = { id:PROJECT,name:'Owner project',key:'REAL',mcp_enabled:options.enabled ?? true,archived:false }
   let connection = null, issuanceResponse, issued = 0, revoked = 0, launched = 0, verified = 0
   const adapter = {
+    ...(options.client === 'gemini' ? { client:'gemini',label:'Gemini',configurationHome:path.join(root,'gemini-home'),matches:matchesGeminiEntry,manualInstructions:geminiInstructions } : {}),
     executable:{path:path.join(root,'codex.exe'),sha256:'a'.repeat(64),version:'mock',appServer:true},codexHome:path.join(root,'codex-home'),
     async entry(setup) { return entries.get(setup.serverName) ?? null },
     async install(setup) {
       assert.ok(!entries.has(setup.serverName))
-      const entry = { name:setup.serverName,enabled:true,transport:{ type:'streamable_http',url:setup.endpoint,bearer_token_env_var:setup.envVar,http_headers:null,env_http_headers:null } }
-      entries.set(setup.serverName,entry); return fingerprint(entry)
+      const entry = options.client === 'gemini' ? {httpUrl:setup.endpoint,headers:{Authorization:'Bearer ${'+setup.envVar+'}'}}
+        : { name:setup.serverName,enabled:true,transport:{ type:'streamable_http',url:setup.endpoint,bearer_token_env_var:setup.envVar,http_headers:null,env_http_headers:null } }
+      entries.set(setup.serverName,entry)
+      if(options.installUncertain)throw new ConnectorError('configuration_write_uncertain')
+      return fingerprint(entry)
     },
     async remove(setup,hash) {
+      if(options.removeUncertain)throw new ConnectorError('configuration_write_uncertain')
       const entry = entries.get(setup.serverName)
       if (!entry) return
-      if (!matchesEntry(entry,setup) || fingerprint(entry)!==hash) throw new ConnectorError('configuration_changed')
+      if (!(options.client === 'gemini' ? matchesGeminiEntry : matchesEntry)(entry,setup) || fingerprint(entry)!==hash) throw new ConnectorError('configuration_changed')
       entries.delete(setup.serverName)
     },
     async verify(setup,token) {
       assert.equal(setup.projectId,PROJECT); assert.equal(token,TOKEN); verified++
+      if(options.client === 'gemini')return geminiVerification()
       return options.verifyFailure ? { authorized:false,verified:false,code:'verification_discovery_failed' }
         : options.manual ? { authorized:null,verified:false,code:'manual_verification_required' } : { authorized:true,verified:true,code:'verified' }
     },
@@ -174,5 +182,74 @@ test('archived project can still be revoked through independent cleanup',async t
   const options={revokeFailure:true},f=await fixture(t,options)
   await assert.rejects(f.run());options.revokeFailure=false;f.owner.projects[0].archived=true
   await disconnect(f.store,f.adapter,f.ui,async action=>action(f.owner),PROJECT)
+  assert.deepEqual(await f.store.read(),[])
+})
+test('Gemini Owner workflow issues once, launches with manual verification and cleans up without claiming connection success',async t=>{
+  const f=await fixture(t,{client:'gemini',enabled:false});await f.run()
+  assert.equal(f.issued,1);assert.equal(f.launched,1);assert.equal(f.revoked,1)
+  assert.deepEqual(await f.store.read(),[])
+  assert.ok(f.output.some(line=>line.startsWith('Launching Gemini.')))
+  assert.ok(f.output.some(line=>line.includes('Authorized: not verified. Verified working: no.')))
+  assert.ok(f.output.some(line=>line.includes('exactly these five tools')))
+  assert.ok(!JSON.stringify(f.output).includes(TOKEN))
+  assert.equal(f.owner.projects[0].mcp_enabled,true)
+})
+function codexRecord(f){return {projectId:PROJECT,userId:USER,client:'codex',executable:f.adapter.executable.path,
+  codexHome:path.join(f.root,'codex-home'),clientLabel:'TrackQA Connect 44444444-4444-4444-8444-444444444444',connectionId:null,
+  phase:'planned',installed:false,configHash:null,lastVerifiedAt:null}}
+test('same-project Codex legacy recovery record survives Gemini connect/cleanup unchanged',async t=>{
+  const f=await fixture(t,{client:'gemini'}),record=codexRecord(f)
+  await f.store.save(record);await f.run()
+  assert.deepEqual(await f.store.read(),[record]);assert.equal(f.revoked,1)
+  await status(f.store,f.adapter,f.ui)
+  assert.ok(f.output.at(-1).includes('No connector-managed'))
+})
+test('Gemini interruption revokes only its connection and preserves same-project Codex metadata',async t=>{
+  const f=await fixture(t,{client:'gemini',duringLaunch:()=>{throw new ConnectorError('interrupted')}}),record=codexRecord(f)
+  await f.store.save(record)
+  await assert.rejects(f.run(),e=>e.code==='interrupted')
+  assert.deepEqual(await f.store.read(),[record]);assert.equal(f.revoked,1)
+})
+test('uncertain Gemini revocation retains client-specific metadata and independent disconnect recovers only Gemini',async t=>{
+  const options={client:'gemini',revokeFailure:true},f=await fixture(t,options),record=codexRecord(f)
+  await f.store.save(record)
+  await assert.rejects(f.run(),e=>e.code==='cleanup_unconfirmed')
+  const records=await f.store.read(),gemini=records.find(r=>r.client==='gemini')
+  assert.equal(records.length,2);assert.equal(gemini.geminiHome,f.adapter.configurationHome)
+  assert.equal(gemini.codexHome,undefined);assert.equal(gemini.phase,'revocation_pending')
+  assert.equal(gemini.lastVerifiedAt,null);assert.ok(!JSON.stringify(records).includes(TOKEN))
+  options.revokeFailure=false
+  await disconnect(f.store,f.adapter,f.ui,async action=>action(f.owner),PROJECT)
+  assert.deepEqual(await f.store.read(),[record])
+})
+test('Gemini status/disconnect cannot consume Codex records even for the same project',async t=>{
+  const f=await fixture(t,{client:'gemini'}),record=codexRecord(f)
+  await f.store.save(record)
+  await assert.rejects(disconnect(f.store,f.adapter,f.ui,async()=>{throw new Error('No authentication expected')},PROJECT),e=>e.code==='no_managed_connections')
+  assert.deepEqual(await f.store.read(),[record]);assert.equal(f.calls.length,0)
+})
+test('uncertain Gemini local removal retains revoked recovery metadata and never issues again',async t=>{
+  const options={client:'gemini',removeUncertain:true},f=await fixture(t,options),other=codexRecord(f)
+  await f.store.save(other)
+  await assert.rejects(f.run(),e=>e.code==='cleanup_unconfirmed')
+  const record=(await f.store.read()).find(row=>row.client==='gemini')
+  assert.equal(record.phase,'revoked');assert.equal(record.installed,true);assert.equal(record.connectionId,CONNECTION)
+  assert.equal(f.issued,1);assert.equal(f.revoked,1)
+  assert.ok(f.output.some(line=>line.includes('.trackqa-settings-recovery-*.bak')))
+  options.removeUncertain=false
+  await disconnect(f.store,f.adapter,f.ui,async()=>{throw new Error('Already revoked: no sign-in needed')},PROJECT)
+  assert.deepEqual(await f.store.read(),[other]);assert.equal(f.issued,1)
+})
+test('uncertain Gemini installation cannot issue credentials and preserves metadata until manually reconciled',async t=>{
+  const f=await fixture(t,{client:'gemini',installUncertain:true})
+  await assert.rejects(f.run(),e=>e.code==='cleanup_unconfirmed')
+  const [record]=await f.store.read()
+  assert.equal(record.client,'gemini');assert.equal(record.phase,'planned');assert.equal(record.configHash,null)
+  assert.equal(record.connectionId,null);assert.equal(f.issued,0);assert.equal(f.launched,0)
+  assert.ok(f.output.some(line=>line.includes('never restore over an unexpected external edit')))
+  // Simulate the user's separate review/removal; the connector must not guess
+  // ownership of an installation whose fingerprint was never acknowledged.
+  f.entries.delete(setupFor(PROJECT,'gemini').serverName)
+  await disconnect(f.store,f.adapter,f.ui,async()=>{throw new Error('No credentials were issued')},PROJECT)
   assert.deepEqual(await f.store.read(),[])
 })

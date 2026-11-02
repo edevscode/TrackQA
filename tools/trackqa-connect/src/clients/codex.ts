@@ -6,7 +6,8 @@ import { capture, clientEnvironment, foreground } from '../process.ts'
 import { ConnectorError, requireValue } from '../core.ts'
 import type { Setup } from '../core.ts'
 import { verifyCodex } from './codex-verify.ts'
-import type { Verification } from './codex-verify.ts'
+import type { Adapter } from './adapter.ts'
+export type { Adapter } from './adapter.ts'
 
 export function trustedLocation(file: string, home = os.homedir(), platform = process.platform, cwd = process.cwd()) {
   const paths = platform === 'win32' ? path.win32 : path.posix
@@ -110,14 +111,6 @@ export function matchesEntry(value: unknown, setup: Setup) {
   return entry.name === setup.serverName && entry.enabled === true && transport?.type === 'streamable_http'
     && transport.url === setup.endpoint && transport.bearer_token_env_var === setup.envVar
     && !Object.keys(transport.http_headers ?? {}).length && !Object.keys(transport.env_http_headers ?? {}).length
-}
-export type Adapter = {
-  executable: Executable; codexHome: string
-  entry: (setup: Setup) => Promise<unknown | null>
-  install: (setup: Setup) => Promise<string>
-  remove: (setup: Setup, hash: string | null) => Promise<void>
-  launch: (setup: Setup, token: string, signal?: AbortSignal) => Promise<void>
-  verify: (setup: Setup, token: string, signal?: AbortSignal) => Promise<Verification>
 }
 export function codexAdapter(executable: Executable, codexHome: string, run = capture, environment = process.env, launchForeground = foreground): Adapter {
   const env = clientEnvironment(codexHome, environment)

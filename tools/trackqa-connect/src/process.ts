@@ -12,10 +12,10 @@ export function clientEnvironment(codexHome: string, env: NodeJS.ProcessEnv = pr
 }
 // stdout/stderr are bounded and never forwarded. Native client diagnostics may
 // contain unrelated configuration secrets. Callers receive only sanitized errors.
-export async function capture(executable: string, args: string[], env: NodeJS.ProcessEnv, spawnFn = spawnProcess) {
+export async function capture(executable: string, args: string[], env: NodeJS.ProcessEnv, spawnFn = spawnProcess, cwd?: string) {
   return new Promise<string>((resolve, reject) => {
     let output = '', size = 0, settled = false
-    const child = spawnFn(executable, args, { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawnFn(executable, args, { env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     const finish = (error?: Error) => {
       if (settled) return
       settled = true; clearTimeout(timer)

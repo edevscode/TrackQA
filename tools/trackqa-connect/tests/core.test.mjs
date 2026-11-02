@@ -27,7 +27,7 @@ test('commands are explicit and no client is chosen by default', () => {
   assert.deepEqual(parseArgs(['status', '--client', 'codex', '--project', PROJECT]), { command: 'status', client: 'codex', projectId: PROJECT })
   assert.equal(parseArgs(['disconnect', '--client', 'codex']).command, 'disconnect')
 })
-for (const args of [['connect','--client','claude'],['connect','--token','never'],['connect','--client','codex','--client','codex'],['connect','--project','bad'],['unknown'],['status','--codex-path']]) {
+for (const args of [['connect','--client','unsupported'],['connect','--token','never'],['connect','--client','codex','--client','codex'],['connect','--project','bad'],['unknown'],['status','--codex-path']]) {
   test('invalid/credential/unsupported arguments fail closed: ' + args.slice(0,2).join(' '), () => assert.throws(() => parseArgs(args)))
 }
 test('preview identifiers are project scoped and terminal labels cannot inject controls', () => {

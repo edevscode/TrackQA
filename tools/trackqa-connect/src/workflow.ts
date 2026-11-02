@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { ConnectorError, display, requireValue, setupFor, TOKEN, UUID } from './core.ts'
 import type { Project, Setup } from './core.ts'
 import type { Owner } from './auth.ts'
-import type { Adapter } from './clients/codex.ts'
+import type { Adapter } from './clients/adapter.ts'
+import { adapterClient, adapterHome, adapterLabel } from './clients/adapter.ts'
 import { fingerprint, matchesEntry } from './clients/codex.ts'
 import type { Store, RecordState } from './state.ts'
+import { recordHome } from './state.ts'
 
 export type UI = {
   say: (message: string) => void
@@ -29,7 +31,8 @@ export async function chooseProject(owner: Owner, ui: UI, requested?: string) {
   return ownerProject(owner, id)
 }
 export function preview(setup: Setup, adapter: Adapter) {
-  return `Client: Codex CLI ${adapter.executable.version}\nProject: ${setup.projectId}\nConfig: ${display(adapter.codexHome)}\nServer: ${setup.serverName}\nEndpoint: ${setup.endpoint}\nAuthentication: environment reference ${setup.envVar} (no token saved)\nNative command: codex mcp add ${setup.serverName} --url ${setup.endpoint} --bearer-token-env-var ${setup.envVar}\nUnrelated MCP entries will be preserved.`
+  const command = adapter.installPreview?.(setup) ?? `codex mcp add ${setup.serverName} --url ${setup.endpoint} --bearer-token-env-var ${setup.envVar}`
+  return `Client: ${adapterLabel(adapter)} CLI ${adapter.executable.version}\nProject: ${setup.projectId}\nConfig: ${display(adapterHome(adapter))}\nServer: ${setup.serverName}\nEndpoint: ${setup.endpoint}\nAuthentication: environment reference ${setup.envVar} (no token saved)\nInstallation method (preview only): ${command}\nUnrelated MCP entries will be preserved.`
 }
 async function remoteCleanup(owner: Owner, record: RecordState) {
   await ownerProject(owner, record.projectId, true)
@@ -50,6 +53,7 @@ async function remoteCleanup(owner: Owner, record: RecordState) {
   }
 }
 export async function cleanup(store: Store, adapter: Adapter, record: RecordState, owner?: Owner) {
+  requireValue(record.client === adapterClient(adapter) && recordHome(record) === adapterHome(adapter), 'configuration_home_mismatch')
   const unresolved: string[] = []
   const needsRevocation = ['issuing', 'active', 'revocation_pending'].includes(record.phase)
   if (needsRevocation) {
@@ -61,27 +65,28 @@ export async function cleanup(store: Store, adapter: Adapter, record: RecordStat
     } catch { record.phase = 'revocation_pending'; unresolved.push('revocation_unconfirmed') }
   }
   try {
-    await adapter.remove(setupFor(record.projectId), record.configHash)
+    await adapter.remove(setupFor(record.projectId, record.client), record.configHash)
     record.installed = false
   } catch { unresolved.push('local_removal_unconfirmed') }
   if (unresolved.length) await store.save(record)
-  else await store.remove(record.projectId)
+  else await store.remove(record.projectId, record.client)
   return { revoked: !needsRevocation || record.phase === 'revoked', removed: !record.installed && !unresolved.includes('local_removal_unconfirmed'), unresolved }
 }
 export async function connect({ owner, adapter, store, ui, projectId, signal }: {
   owner: Owner; adapter: Adapter; store: Store; ui: UI; projectId?: string; signal?: AbortSignal
 }) {
   const project = await chooseProject(owner, ui, projectId)
-  const setup = setupFor(project.id)
+  const client = adapterClient(adapter)
+  const setup = setupFor(project.id, client)
   const records = await store.read()
-  requireValue(!records.some(record => record.projectId === project.id), 'existing_connection_recover_first')
+  requireValue(!records.some(record => record.projectId === project.id && record.client === client), 'existing_connection_recover_first')
   requireValue(await adapter.entry(setup) === null, 'configuration_conflict')
   ui.say(preview(setup, adapter))
   ui.say('The token will be available only to this foreground session. Other trusted processes on this OS account may inspect its environment. A normal future client launch will not inherit it.')
   if (!await ui.confirm('Install this token-free configuration?')) return
   requireValue(!signal?.aborted, 'interrupted')
-  const record: RecordState = { projectId: project.id, userId: owner.userId, client: 'codex', executable: adapter.executable.path,
-    codexHome: adapter.codexHome, clientLabel: `TrackQA Connect ${randomUUID()}`, connectionId: null,
+  const record: RecordState = { projectId: project.id, userId: owner.userId, client, executable: adapter.executable.path,
+    ...(client === 'claude' ? { claudeHome: adapterHome(adapter) } : client === 'gemini' ? { geminiHome: adapterHome(adapter) } : { codexHome: adapterHome(adapter) }), clientLabel: `TrackQA Connect ${randomUUID()}`, connectionId: null,
     phase: 'planned', installed: false, configHash: null, lastVerifiedAt: null }
   await store.save(record)
   let token = ''
@@ -115,12 +120,12 @@ export async function connect({ owner, adapter, store, ui, projectId, signal }: 
     const verification = await adapter.verify(setup, token, signal)
     ui.say(`Configured: yes. Authorized: ${verification.authorized === true ? 'verified' : 'not verified'}. Verified working: ${verification.verified ? 'yes' : 'no'}.`)
     if (verification.code === 'manual_verification_required') {
-      ui.say(`Automatic client verification is unavailable. In Codex, use /mcp and call trackqa_connection_status and trackqa_list_projects; confirm only project ${project.id}. Do not submit a finding. The CLI will keep the result unverified.`)
+      ui.say(adapter.manualInstructions?.(setup) ?? `Automatic client verification is unavailable. In Codex, use /mcp and call trackqa_connection_status and trackqa_list_projects; confirm only project ${project.id}. Do not submit a finding. The CLI will keep the result unverified.`)
       if (!await ui.confirm('Launch for manual read-only verification?')) return
     } else requireValue(verification.verified, verification.code)
     if (verification.verified) { record.lastVerifiedAt = new Date().toISOString(); await store.save(record) }
     requireValue(!signal?.aborted, 'interrupted')
-    ui.say('Launching Codex. Exit normally to return here for token revocation and configuration cleanup.')
+    ui.say(`Launching ${adapterLabel(adapter)}. Exit normally to return here for token revocation and configuration cleanup.`)
     await adapter.launch(setup, token, signal)
   }
   try { await run() } catch (error) { failure = error }
@@ -129,27 +134,29 @@ export async function connect({ owner, adapter, store, ui, projectId, signal }: 
     const result = await cleanup(store, adapter, record, owner)
     ui.say(`Session cleanup: local configuration ${result.removed ? 'removed' : 'UNCONFIRMED'}; remote revocation ${result.revoked ? 'confirmed or not needed' : 'UNCONFIRMED'}.`)
     if (result.unresolved.length) {
-      ui.say(`Recovery required: run disconnect --client codex --project ${project.id}, or ask a project Owner to revoke the connection in Manage Connections. Keep the nonsecret recovery record. No token was saved.`)
+      if (client === 'gemini') ui.say('Preserve settings.json and any .trackqa-settings-recovery-*.bak in the Gemini home. Compare/merge before recovery; never restore over an unexpected external edit or retry an uncertain write automatically.')
+      ui.say(`Recovery required: run disconnect --client ${client} --project ${project.id}, or ask a project Owner to revoke the connection in Manage Connections. Keep the nonsecret recovery record. No token was saved.`)
       failure = new ConnectorError('cleanup_unconfirmed')
     }
   }
   if (failure) throw failure
 }
 export async function status(store: Store, adapter: Adapter, ui: UI, projectId?: string) {
-  const records = (await store.read()).filter(record => !projectId || record.projectId === projectId)
+  const records = (await store.read()).filter(record => record.client === adapterClient(adapter) && (!projectId || record.projectId === projectId))
   if (!records.length) { ui.say('No connector-managed configuration or recovery records. Authorized: not checked. Verified working: not checked.'); return }
   for (const record of records) {
-    requireValue(record.codexHome === adapter.codexHome, 'configuration_home_mismatch')
-    const entry = await adapter.entry(setupFor(record.projectId))
-    const configured = !!record.configHash && matchesEntry(entry, setupFor(record.projectId)) && fingerprint(entry) === record.configHash
+    requireValue(recordHome(record) === adapterHome(adapter), 'configuration_home_mismatch')
+    const setup = setupFor(record.projectId, record.client)
+    const entry = await adapter.entry(setup)
+    const configured = !!record.configHash && (adapter.matches ?? matchesEntry)(entry, setup) && fingerprint(entry) === record.configHash
     ui.say(`Project ${record.projectId}: Configured: ${configured ? 'yes' : entry ? 'changed; not managed safely' : 'no'}. Authorized: not checked. Verified working: not checked (no live session probe). Recovery: ${record.phase}. Last verified: ${record.lastVerifiedAt ?? 'never'}.`)
   }
 }
 export async function disconnect(store: Store, adapter: Adapter, ui: UI, authenticate: (action: (owner: Owner) => Promise<void>) => Promise<void>, projectId?: string) {
-  const records = (await store.read()).filter(record => !projectId || record.projectId === projectId)
+  const records = (await store.read()).filter(record => record.client === adapterClient(adapter) && (!projectId || record.projectId === projectId))
   requireValue(records.length, 'no_managed_connections')
   const record = records.length === 1 ? records[0] : records[await ui.choose('Choose a connection to remove', records.map(record => record.projectId))]
-  requireValue(record && record.codexHome === adapter.codexHome, 'configuration_home_mismatch')
+  requireValue(record && recordHome(record) === adapterHome(adapter), 'configuration_home_mismatch')
   if (!await ui.confirm(`Remove the connector-owned configuration and revoke its connection for project ${record.projectId}?`)) return
   let result, authenticationFailure: unknown
   if (!['issuing', 'active', 'revocation_pending'].includes(record.phase)) result = await cleanup(store, adapter, record)
@@ -159,6 +166,7 @@ export async function disconnect(store: Store, adapter: Adapter, ui: UI, authent
   }
   requireValue(result, 'cleanup_unconfirmed')
   ui.say(`Disconnect: local configuration ${result.removed ? 'removed' : 'UNCONFIRMED'}; remote revocation ${result.revoked ? 'confirmed or not needed' : 'UNCONFIRMED'}.`)
+  if (result.unresolved.length && adapterClient(adapter) === 'gemini') ui.say('Preserve settings.json, any .trackqa-settings-recovery-*.bak, and the nonsecret recovery record. Compare/merge before retrying local recovery; never reset the whole settings file.')
   if (result.unresolved.length) throw new ConnectorError('cleanup_unconfirmed')
   if (authenticationFailure) throw authenticationFailure
 }
