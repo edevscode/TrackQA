@@ -1,6 +1,14 @@
 import type { IssueStatus, ProjectDashboardStats, ProjectRole } from './database.types'
 import { canDevelopIssues } from './permissions.ts'
 
+export const issueStatusLabels: Readonly<Record<IssueStatus, string>> = Object.freeze({
+  OPEN: 'Open', IN_PROGRESS: 'In Progress', FOR_TESTING: 'For Testing',
+  PASSED: 'QA Passed', FAILED: 'QA Failed', DONE: 'Closed',
+})
+export function issueStatusLabel(value: string | null | undefined): string {
+  return value && Object.hasOwn(issueStatusLabels, value) ? issueStatusLabels[value as IssueStatus] : value ?? '—'
+}
+
 export type IssueLifecycle = 'active' | 'completed' | 'all'
 export const lifecycleLabels: Record<IssueLifecycle, string> = { active: 'Active', completed: 'Completed', all: 'All' }
 export function issueLifecycle(value: string | null, status?: IssueStatus | ''): IssueLifecycle {

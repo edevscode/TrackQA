@@ -8,6 +8,7 @@ import LoadError from '../components/LoadError'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
 import { invalidateProjectCache } from '../lib/cache'
+import { isFindingRangeError, recoverFindingPage } from '../lib/findingPagination'
 import type { AiFinding, FindingReceipt } from '../lib/database.types'
 
 type Finding = AiFinding & { reviewer: { full_name: string | null } | null }
@@ -43,21 +44,45 @@ function Findings({ projectId, archived }: { projectId: string; archived: boolea
   const load = useCallback(async () => {
     const version = ++request.current
     const signal = cancellation.current?.signal
+    let recovering = false
     try {
-      let query = supabase.from('ai_findings').select(fields).eq('project_id', projectId)
+      let query = supabase.from('ai_findings').select(fields, { count: 'exact' }).eq('project_id', projectId)
       if (signal) query = query.abortSignal(signal)
       query = reviewed ? query.neq('status', 'PENDING') : query.eq('status', 'PENDING')
-      const { data, error: failed } = await query.order('created_at', { ascending: false })
+      const { data, count, error: failed, status } = await query.order('created_at', { ascending: false })
         .order('id', { ascending: false }).range(page * pageSize, (page + 1) * pageSize)
-      if (failed) throw failed
       if (signal?.aborted || version !== request.current) return
+      let total = count
+      if (failed) {
+        if (!isFindingRangeError(page, status, failed.code)) throw failed
+        // PostgREST may return 416 instead of an empty array for a stale offset.
+        // Recount only that case, without a range, using the identical filters.
+        let recount = supabase.from('ai_findings').select('id', { count: 'exact', head: true }).eq('project_id', projectId)
+        if (signal) recount = recount.abortSignal(signal)
+        recount = reviewed ? recount.neq('status', 'PENDING') : recount.eq('status', 'PENDING')
+        const result = await recount
+        if (result.error) throw result.error
+        total = result.count
+      }
+      if (signal?.aborted || version !== request.current) return
+      const resultRows = data ?? []
+      const nearest = recoverFindingPage(page, resultRows.length, total, pageSize)
+      if (nearest !== page) {
+        recovering = true
+        setLoading(true)
+        setPage(nearest)
+        setSelected(null)
+        setDecision(null)
+        setNote('')
+        return
+      }
       setError(null)
-      setRows(data.slice(0, pageSize))
-      setHasMore(data.length > pageSize)
+      setRows(resultRows.slice(0, pageSize))
+      setHasMore(resultRows.length > pageSize)
     } catch {
       if (!signal?.aborted && version === request.current) setError('Unable to load findings. Check your project access and retry.')
     } finally {
-      if (!signal?.aborted && version === request.current) setLoading(false)
+      if (!recovering && !signal?.aborted && version === request.current) setLoading(false)
     }
   }, [projectId, reviewed, page])
 

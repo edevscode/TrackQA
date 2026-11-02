@@ -1,24 +1,18 @@
 import { ArrowLeft, ArrowRight, Bug, KeyRound, Mail, UserPlus } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
-import type { ProjectInvitation } from '../lib/database.types'
-
-type InvitationWithProject = ProjectInvitation & {
-  projects: {
-    name: string
-    key: string
-    owner: { full_name: string | null; email: string } | null
-  } | null
-  inviter: { full_name: string | null; email: string } | null
-}
+import LoadError from '../components/LoadError'
+import { invitationLoadMessage, loadPendingInvitations } from '../lib/projectInvitations'
+import type { InvitationWithProject } from '../lib/projectInvitations'
 
 function JoinProject() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const email = user?.email ?? ''
   const { currentProject, refreshProjects, setCurrentProjectId } = useProject()
 
   const [accessCode, setAccessCode] = useState('')
@@ -29,21 +23,41 @@ function JoinProject() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteLoadError, setInviteLoadError] = useState<string | null>(null)
+  const requestVersion = useRef(0)
+  const cancellation = useRef<AbortController | null>(null)
+
+  const loadInvitations = useCallback(async () => {
+    const version = ++requestVersion.current
+    cancellation.current?.abort()
+    const controller = new AbortController()
+    cancellation.current = controller
+    setLoading(true)
+    setInviteLoadError(null)
+    try {
+      const data = await loadPendingInvitations(email, (address) => supabase
+        .from('project_invitations')
+        .select('*, projects(name, key, owner:profiles!projects_owner_id_fkey(full_name, email)), inviter:profiles!project_invitations_invited_by_fkey(full_name, email)')
+        .eq('email', address).eq('status', 'PENDING').abortSignal(controller.signal))
+      if (version === requestVersion.current && !controller.signal.aborted) setInvitations(data)
+    } catch {
+      if (version === requestVersion.current && !controller.signal.aborted) setInviteLoadError(invitationLoadMessage)
+    } finally {
+      if (version === requestVersion.current && !controller.signal.aborted) setLoading(false)
+    }
+  }, [email])
+
+  const cancelInvitations = useCallback(() => {
+    ++requestVersion.current
+    cancellation.current?.abort()
+  }, [])
 
   useEffect(() => {
-    if (!user?.email) return
-    supabase
-      .from('project_invitations')
-      .select(
-        '*, projects(name, key, owner:profiles!projects_owner_id_fkey(full_name, email)), inviter:profiles!project_invitations_invited_by_fkey(full_name, email)',
-      )
-      .eq('email', user.email.toLowerCase())
-      .eq('status', 'PENDING')
-      .then(({ data }) => {
-        setInvitations((data as InvitationWithProject[]) ?? [])
-        setLoading(false)
-      })
-  }, [user?.email])
+    // Synchronize invitation state with the authenticated API.
+    // oxlint-disable-next-line react/set-state-in-effect
+    void loadInvitations()
+    return cancelInvitations
+  }, [loadInvitations, cancelInvitations])
 
   const handleJoinWithCode = async (e: FormEvent) => {
     e.preventDefault()
@@ -217,9 +231,10 @@ function JoinProject() {
               </div>
             )}
 
+            <LoadError message={inviteLoadError} onRetry={() => void loadInvitations()} />
             {loading ? (
-              <p className="py-md text-body-md text-on-surface-variant">Checking pending invitations…</p>
-            ) : invitations.length === 0 ? (
+              <p role="status" className="py-md text-body-md text-on-surface-variant">Checking pending invitations…</p>
+            ) : inviteLoadError ? null : invitations.length === 0 ? (
               <p className="py-md text-body-md text-on-surface-variant">
                 No pending email invitations found. If your project team sent an access code, enter it above.
               </p>

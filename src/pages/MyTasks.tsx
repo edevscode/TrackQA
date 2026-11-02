@@ -1,6 +1,6 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import IssueListControls, { FilterSelect } from '../components/IssueListControls'
-import { matchesLifecycle, workGroup, workGroupOrder, workGroups, type IssueLifecycle } from '../lib/issueWork'
+import { issueStatusLabels, matchesLifecycle, workGroup, workGroupOrder, workGroups, type IssueLifecycle } from '../lib/issueWork'
 import { useIssueQueue } from '../hooks/useIssueQueue'
 import { deadlineState, compareResolutionDates, comparePendingDeadlines, type DeadlineFilter } from '../lib/deadlines'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
@@ -31,12 +31,12 @@ type TaskRow = MyTasksItem
 
 const statusOptions: { value: IssueStatus | ''; label: string; dot: string }[] = [
   { value: '', label: 'All Statuses', dot: 'bg-outline' },
-  { value: 'OPEN', label: 'Open', dot: 'bg-outline' },
-  { value: 'IN_PROGRESS', label: 'In Progress', dot: 'bg-primary' },
-  { value: 'FOR_TESTING', label: 'For Testing', dot: 'bg-amber-500' },
-  { value: 'PASSED', label: 'QA Passed', dot: 'bg-emerald-500' },
-  { value: 'FAILED', label: 'QA Failed', dot: 'bg-rose-500' },
-  { value: 'DONE', label: 'Closed', dot: 'bg-slate-400' },
+  { value: 'OPEN', label: issueStatusLabels.OPEN, dot: 'bg-outline' },
+  { value: 'IN_PROGRESS', label: issueStatusLabels.IN_PROGRESS, dot: 'bg-primary' },
+  { value: 'FOR_TESTING', label: issueStatusLabels.FOR_TESTING, dot: 'bg-amber-500' },
+  { value: 'PASSED', label: issueStatusLabels.PASSED, dot: 'bg-emerald-500' },
+  { value: 'FAILED', label: issueStatusLabels.FAILED, dot: 'bg-rose-500' },
+  { value: 'DONE', label: issueStatusLabels.DONE, dot: 'bg-slate-400' },
 ]
 
 const priorityOptions: {
@@ -76,32 +76,32 @@ const statusConfig: Record<
   { label: string; dotClass: string; badgeClass: string }
 > = {
   OPEN: {
-    label: 'Open',
+    label: issueStatusLabels.OPEN,
     dotClass: 'bg-outline',
     badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
   },
   IN_PROGRESS: {
-    label: 'In Dev',
+    label: issueStatusLabels.IN_PROGRESS,
     dotClass: 'bg-primary',
     badgeClass: 'border-primary/30 bg-primary-fixed/30 text-primary',
   },
   FOR_TESTING: {
-    label: 'For QA',
+    label: issueStatusLabels.FOR_TESTING,
     dotClass: 'bg-amber-500 animate-pulse',
     badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
   },
   PASSED: {
-    label: 'QA Passed',
+    label: issueStatusLabels.PASSED,
     dotClass: 'bg-emerald-500',
     badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   },
   FAILED: {
-    label: 'QA Failed',
+    label: issueStatusLabels.FAILED,
     dotClass: 'bg-rose-500',
     badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
   },
   DONE: {
-    label: 'Closed',
+    label: issueStatusLabels.DONE,
     dotClass: 'bg-slate-400',
     badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
   },

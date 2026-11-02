@@ -1,6 +1,6 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import IssueListControls, { FilterSelect } from '../components/IssueListControls'
-import { matchesLifecycle, type IssueLifecycle } from '../lib/issueWork'
+import { issueStatusLabels, matchesLifecycle, type IssueLifecycle } from '../lib/issueWork'
 import { useIssueQueue } from '../hooks/useIssueQueue'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import type { DeadlineFilter, DeadlineSort } from '../lib/deadlines'
@@ -49,32 +49,32 @@ const statusConfig: Record<
   { label: string; badge: string; dot: string }
 > = {
   OPEN: {
-    label: 'Open',
+    label: issueStatusLabels.OPEN,
     badge: 'bg-surface-container border border-outline-variant text-on-surface-variant',
     dot: 'bg-slate-400',
   },
   IN_PROGRESS: {
-    label: 'In Progress',
+    label: issueStatusLabels.IN_PROGRESS,
     badge: 'bg-sky-50 border border-sky-200 text-sky-800',
     dot: 'bg-sky-500',
   },
   FOR_TESTING: {
-    label: 'For Testing',
+    label: issueStatusLabels.FOR_TESTING,
     badge: 'bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold',
     dot: 'bg-indigo-600',
   },
   PASSED: {
-    label: 'Passed',
+    label: issueStatusLabels.PASSED,
     badge: 'bg-emerald-50 border border-emerald-200 text-emerald-800',
     dot: 'bg-emerald-600',
   },
   FAILED: {
-    label: 'Failed',
+    label: issueStatusLabels.FAILED,
     badge: 'bg-rose-50 border border-rose-200 text-rose-800 font-semibold',
     dot: 'bg-rose-600',
   },
   DONE: {
-    label: 'Done',
+    label: issueStatusLabels.DONE,
     badge: 'bg-surface-container border border-outline-variant text-on-surface-variant',
     dot: 'bg-slate-500',
   },

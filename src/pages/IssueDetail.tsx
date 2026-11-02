@@ -1,3 +1,4 @@
+import { issueStatusLabels, issueStatusLabel } from '../lib/issueWork'
 import DeadlineFields from '../components/DeadlineFields'
 import { useLocalDeadlineInput } from '../hooks/useLocalDeadlineInput'
 import DeadlineSummary from '../components/DeadlineSummary'
@@ -60,11 +61,11 @@ import type {
 } from '../lib/database.types'
 
 const workflowSteps: { status: IssueStatus; label: string; stepNumber: string }[] = [
-  { status: 'OPEN', label: 'Open', stepNumber: '01' },
-  { status: 'IN_PROGRESS', label: 'In Dev', stepNumber: '02' },
-  { status: 'FOR_TESTING', label: 'For QA', stepNumber: '03' },
-  { status: 'PASSED', label: 'Verified', stepNumber: '04' },
-  { status: 'DONE', label: 'Closed', stepNumber: '05' },
+  { status: 'OPEN', label: issueStatusLabels.OPEN, stepNumber: '01' },
+  { status: 'IN_PROGRESS', label: issueStatusLabels.IN_PROGRESS, stepNumber: '02' },
+  { status: 'FOR_TESTING', label: issueStatusLabels.FOR_TESTING, stepNumber: '03' },
+  { status: 'PASSED', label: issueStatusLabels.PASSED, stepNumber: '04' },
+  { status: 'DONE', label: issueStatusLabels.DONE, stepNumber: '05' },
 ]
 
 const priorityConfig: Record<
@@ -102,32 +103,32 @@ const statusConfig: Record<
   { label: string; dotClass: string; badgeClass: string }
 > = {
   OPEN: {
-    label: 'Open',
+    label: issueStatusLabels.OPEN,
     dotClass: 'bg-outline',
     badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
   },
   IN_PROGRESS: {
-    label: 'In Progress',
+    label: issueStatusLabels.IN_PROGRESS,
     dotClass: 'bg-primary',
     badgeClass: 'border-primary/30 bg-primary-fixed/30 text-primary',
   },
   FOR_TESTING: {
-    label: 'For Testing',
+    label: issueStatusLabels.FOR_TESTING,
     dotClass: 'bg-amber-500 animate-pulse',
     badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
   },
   PASSED: {
-    label: 'QA Passed',
+    label: issueStatusLabels.PASSED,
     dotClass: 'bg-emerald-500',
     badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   },
   FAILED: {
-    label: 'QA Failed',
+    label: issueStatusLabels.FAILED,
     dotClass: 'bg-rose-500',
     badgeClass: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
   },
   DONE: {
-    label: 'Closed',
+    label: issueStatusLabels.DONE,
     dotClass: 'bg-slate-400',
     badgeClass: 'border-outline-variant bg-surface-container-low text-on-surface-variant',
   },
@@ -138,7 +139,7 @@ const activityText: Partial<Record<ActivityAction, (a: TimelineActivity) => stri
   ASSIGNED: () => 'assigned this issue',
   REASSIGNED: () => 'reassigned this issue',
   PRIORITY_CHANGED: (a) => `changed priority from ${a.from_value} to ${a.to_value}`,
-  STATUS_CHANGED: (a) => `changed status to ${a.to_value}`,
+  STATUS_CHANGED: (a) => `changed status to ${issueStatusLabel(a.to_value)}`,
   SUBMITTED_FOR_TESTING: () => 'submitted this issue for QA verification',
   QA_PASSED: () => 'marked QA as PASSED',
   QA_FAILED: () => 'marked QA as FAILED',
@@ -825,7 +826,7 @@ function IssueDetail() {
                               : 'text-on-surface'
                         }`}
                       >
-                        {isFailureState ? 'QA Failed' : step.label}
+                        {isFailureState ? issueStatusLabels.FAILED : step.label}
                       </p>
                       <p className="font-mono text-code-xs text-on-surface-variant">
                         {isCurrent ? 'Current Stage' : isPassed ? 'Completed' : 'Pending'}
@@ -1085,7 +1086,7 @@ function IssueDetail() {
                       className="inline-flex shrink-0 items-center justify-center gap-xs rounded-md bg-emerald-700 px-md py-xs text-label-md font-bold uppercase tracking-wider text-white hover:bg-emerald-800 transition-colors disabled:opacity-50"
                     >
                       <Check size={16} />
-                      <span>Close Ticket (Done)</span>
+                      <span>Close Ticket</span>
                     </button>
                   )}
                 </div>
@@ -1096,7 +1097,7 @@ function IssueDetail() {
                 <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm">
                   <div>
                     <p className="text-body-md font-medium text-on-surface">
-                      Status: <span className="font-mono font-semibold">OPEN (TRIAGE)</span>
+                      Status: <span className="font-mono font-semibold">{issueStatusLabels.OPEN}</span>
                     </p>
                     <p className="text-body-md text-on-surface-variant">
                       {isAssignee
@@ -1125,7 +1126,7 @@ function IssueDetail() {
                 <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm">
                   <div>
                     <p className="text-body-md font-medium text-on-surface">
-                      Status: <span className="font-mono font-semibold text-primary">IN DEVELOPMENT</span>
+                      Status: <span className="font-mono font-semibold text-primary">{issueStatusLabels.IN_PROGRESS}</span>
                     </p>
                     <p className="text-body-md text-on-surface-variant">
                       {isAssignee
