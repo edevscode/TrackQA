@@ -1,10 +1,8 @@
 import type { DeadlineInput } from './deadlines'
 import type { IssuePriority } from './database.types'
 
-// Lives at module scope, not component state, so it survives client-side
-// navigation away from and back to the Report Issue form. A real browser
-// refresh re-evaluates this module and resets it to {}, which is the
-// intended "discard on refresh" behavior.
+// Tab-memory only. Project changes/navigation retain each project's own draft;
+// reload and account changes discard them. No object URLs are allocated here.
 export interface IssueDraft extends DeadlineInput {
   title: string
   description: string
@@ -16,18 +14,27 @@ export interface IssueDraft extends DeadlineInput {
   device: string
   browser: string
   appVersion: string
+  pendingFiles: readonly File[]
 }
 
-let draft: Partial<IssueDraft> = {}
+type Draft = Readonly<Partial<IssueDraft> & { projectId?: string }>
+const empty: Draft = Object.freeze({})
+const drafts = new Map<string, Draft>()
 
-export function getIssueDraft(): Partial<IssueDraft> {
-  return draft
+export function getIssueDraft(projectId: string): Draft {
+  return drafts.get(projectId) ?? empty
 }
 
-export function setIssueDraft(next: Partial<IssueDraft>) {
-  draft = { ...draft, ...next }
+export function setIssueDraft(projectId: string, next: Partial<IssueDraft>) {
+  drafts.set(projectId, Object.freeze({ ...drafts.get(projectId), ...next, projectId,
+    ...(next.end_of_day && { end_of_day: Object.freeze({ ...next.end_of_day }) }),
+    ...(next.pendingFiles && { pendingFiles: Object.freeze([...next.pendingFiles]) }),
+  }))
 }
 
-export function clearIssueDraft() {
-  draft = {}
+// The optional snapshot prevents a late save from erasing a newer draft.
+// No project argument is the existing account-change/sign-out cleanup contract.
+export function clearIssueDraft(projectId?: string, expected?: Draft) {
+  if (projectId === undefined) drafts.clear()
+  else if (!expected || drafts.get(projectId) === expected) drafts.delete(projectId)
 }

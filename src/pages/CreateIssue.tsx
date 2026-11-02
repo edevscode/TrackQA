@@ -19,11 +19,12 @@ import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
+import ConfirmModal from '../components/ConfirmModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { MAX_UPLOAD_BYTES } from '../lib/cloudinary'
 import { supabase } from '../lib/supabase'
-import type { IssuePriority, ProjectRole } from '../lib/database.types'
+import type { IssuePriority, ProjectRole, Project } from '../lib/database.types'
 import { canDevelopIssues } from '../lib/permissions'
 import { clearIssueDraft, getIssueDraft, setIssueDraft } from '../lib/issueDraftStore'
 import { invalidateProjectCache } from '../lib/cache'
@@ -77,11 +78,19 @@ const inputClass =
 type Member = { user_id: string; role: ProjectRole; full_name: string | null }
 
 function CreateIssue() {
-  const navigate = useNavigate()
   const { user } = useAuth()
   const { currentProject, canReportIssues } = useProject()
+  if (!currentProject || !user || !canReportIssues) return <Navigate to="/issues" replace />
+  // A project/account change remounts all form state, including file inputs.
+  return <IssueForm key={`${user.id}:${currentProject.id}`} project={currentProject} />
+}
 
-  const draft = getIssueDraft()
+function IssueForm({ project: currentProject }: { project: Project }) {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const { canReportIssues } = useProject()
+
+  const draft = getIssueDraft(currentProject.id)
   const [deadlines, setDeadlines] = useLocalDeadlineInput(draft)
 
   const [members, setMembers] = useState<Member[]>([])
@@ -99,12 +108,28 @@ function CreateIssue() {
   const [submitting, setSubmitting] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [pendingFiles, setPendingFiles] = useState<File[]>(() => [...(draft.pendingFiles ?? [])])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [discarding, setDiscarding] = useState(false)
+  const active = useRef(true)
+  const hasContent = Boolean(title || description || steps || expected || actual || assigneeId
+    || device || browser || appVersion || priority !== 'HIGH' || pendingFiles.length
+    || deadlines.resolve_by || deadlines.start_by || deadlines.ready_for_qa_by || deadlines.qa_decision_by)
+
+  useEffect(() => {
+    active.current = true
+    return () => { active.current = false }
+  }, [])
+  useEffect(() => {
+    if (!hasContent) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasContent])
 
   useEffect(() => {
     if (!canReportIssues) return
-    setIssueDraft({
+    setIssueDraft(currentProject.id, {
       ...deadlines,
       title,
       description,
@@ -116,8 +141,9 @@ function CreateIssue() {
       device,
       browser,
       appVersion,
+      pendingFiles,
     })
-  }, [title, description, steps, expected, actual, priority, assigneeId, device, browser, appVersion, deadlines, canReportIssues])
+  }, [currentProject.id, title, description, steps, expected, actual, priority, assigneeId, device, browser, appVersion, deadlines, pendingFiles, canReportIssues])
 
   useEffect(() => {
     if (!currentProject || !canReportIssues) return
@@ -182,6 +208,7 @@ function CreateIssue() {
     if (deadlineError) { setError(deadlineError); return }
     setSubmitting(true)
     setError(null)
+    const submittedDraft = getIssueDraft(currentProject.id)
 
     const { data, error: insertError } = await supabase
       .from('issues')
@@ -204,28 +231,27 @@ function CreateIssue() {
       .single()
 
     if (insertError) {
-      setError(insertError.message)
-      setSubmitting(false)
+      if (active.current) { setError(insertError.message); setSubmitting(false) }
       return
     }
 
     const failedAttachments = await uploadFiles(pendingFiles, (file) =>
       saveIssueAttachment(file, currentProject.id, data.id, user.id))
 
-    clearIssueDraft()
+    clearIssueDraft(currentProject.id, submittedDraft)
     invalidateProjectCache(currentProject.id)
-    navigate(`/issues/${data.id}`, { state: { failedAttachments } })
+    if (active.current) navigate(`/issues/${data.id}`, { state: { failedAttachments } })
   }
 
   const handleCancel = () => {
-    clearIssueDraft()
+    if (hasContent) { setDiscarding(true); return }
     navigate('/issues')
   }
 
   if (!canReportIssues) return <Navigate to="/issues" replace />
 
   return (
-    <div className="flex min-h-screen bg-surface">
+    <div className="flex min-h-screen bg-surface" inert={submitting}>
       <Sidebar />
 
       <div className="flex flex-1 flex-col min-w-0">
@@ -267,6 +293,10 @@ function CreateIssue() {
             </div>
           </div>
 
+          <p className="mb-md text-body-sm text-on-surface-variant" role="status">
+            Draft for <strong>{currentProject.name}</strong>. Text and selected files stay with this project during this tab session.
+            {' '}Reloading or signing out discards unsaved drafts.
+          </p>
           {error && (
             <div className="mb-lg rounded-md border border-error/30 bg-error-container px-md py-sm text-body-md font-medium text-on-error-container">
               {error}
@@ -549,6 +579,14 @@ function CreateIssue() {
           </form>
         </main>
       </div>
+      <ConfirmModal open={discarding} onClose={() => setDiscarding(false)}
+        title="Discard this project’s draft?" description="This removes the unfinished report and selected files for this project. Drafts in other projects are kept."
+        confirmLabel="Discard draft" variant="warning" onConfirm={() => {
+          // Leave local state alone until unmount; changing it here can autosave
+          // the discarded report again while router navigation is pending.
+          clearIssueDraft(currentProject.id)
+          navigate('/issues')
+        }} />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { deadlineInput, deadlinePayload, validateDeadlines, emptyDeadlines, remo
 import type { DeadlineHistory } from '../lib/database.types'
 import { uploadFiles } from '../lib/uploadBatch'
 import LoadError from '../components/LoadError'
+import { queueReturn } from '../lib/issueQueue'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { saveIssueAttachment, resolveAttachmentUrls, removeAttachmentFile } from '../lib/attachments'
 import {
@@ -200,12 +201,18 @@ function IssueDetail() {
     return files?.length ? [{ files }] : []
   })
   useEffect(() => {
-    if (location.state) navigate(location.pathname, { replace: true, state: null })
-  }, [location.pathname, location.state, navigate])
+    // Release one-time File references without erasing the queue's return context.
+    if (location.state && Object.hasOwn(location.state, 'failedAttachments')) {
+      const origin = (location.state as { queueReturn?: unknown }).queueReturn
+      navigate({ pathname: location.pathname, search: location.search, hash: location.hash },
+        { replace: true, state: origin ? { queueReturn: origin } : null })
+    }
+  }, [location.pathname, location.search, location.hash, location.state, navigate])
   const { user, profile } = useAuth()
   const { currentProject, setCurrentProjectId } = useProject()
 
   const [issue, setIssue] = useState<Issue | null>(null)
+  const returnQueue = queueReturn(location.state, issue?.project_id ?? currentProject?.id)
   const removedTargets = issue ? removedDeadlineTargets(issue, editDeadlines) : []
   const removalReviewKey = JSON.stringify([issue?.updated_at, editDeadlines.deadline_mode, removedTargets])
   const [project, setProject] = useState<Project | null>(null)
@@ -606,7 +613,7 @@ function IssueDetail() {
         }
         invalidateProjectCache(issue.project_id)
         setConfirmModal((prev) => ({ ...prev, open: false, isLoading: false }))
-        navigate('/issues')
+        navigate(returnQueue.to)
       },
     })
   }
@@ -647,10 +654,10 @@ function IssueDetail() {
               </p>
               <div className="mt-md">
                 <Link
-                  to="/issues"
+                  to={returnQueue.to}
                   className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-body-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
                 >
-                  Return to Backlog
+                  Return to {returnQueue.label}
                 </Link>
               </div>
             </div>
@@ -714,8 +721,8 @@ function IssueDetail() {
           {/* Breadcrumb & Navigation */}
           <div className="mb-sm flex items-center justify-between text-body-md text-on-surface-variant">
             <div className="flex items-center gap-xs">
-              <Link to="/issues" className="text-body-md text-on-surface-variant hover:text-primary transition-colors">
-                Backlog
+              <Link to={returnQueue.to} className="text-body-md text-on-surface-variant hover:text-primary transition-colors">
+                {returnQueue.label}
               </Link>
               <ChevronRight size={14} className="text-outline" />
               <span className="font-mono text-code-xs font-bold text-on-surface">

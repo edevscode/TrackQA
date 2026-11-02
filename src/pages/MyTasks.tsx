@@ -1,6 +1,7 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import IssueListControls, { FilterSelect } from '../components/IssueListControls'
-import { issueLifecycle, matchesLifecycle, workGroup, workGroupOrder, workGroups, type IssueLifecycle } from '../lib/issueWork'
+import { matchesLifecycle, workGroup, workGroupOrder, workGroups, type IssueLifecycle } from '../lib/issueWork'
+import { useIssueQueue } from '../hooks/useIssueQueue'
 import { deadlineState, compareResolutionDates, comparePendingDeadlines, type DeadlineFilter } from '../lib/deadlines'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import LoadError from '../components/LoadError'
@@ -12,7 +13,7 @@ import {
   Equal,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import { useAuth } from '../contexts/AuthContext'
@@ -161,35 +162,23 @@ function MyTasks() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { user } = useAuth()
   const { currentProject, currentRole } = useProject()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const lifecycle = issueLifecycle(searchParams.get('view'))
+  const { state: queue, update, origin } = useIssueQueue('/my-tasks', currentProject?.id ?? '')
+  const { view: lifecycle, scope: tab, status: statusFilter, priority: priorityFilter,
+    q: searchQuery, deadline: deadlineFilter, page } = queue
+  const sortBy = queue.order as SortOption
   const minute = useDeadlineClock()
-  const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>('')
-
-  const [tab, updateTab] = useState<'mine' | 'assigned' | 'reported'>('mine')
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
   const requestVersion = useRef(0)
-
-  // Filters and Sort State
-  const [searchQuery, updateSearchQuery] = useState('')
-  const [statusFilter, updateStatusFilter] = useState<IssueStatus | ''>('')
-  const [priorityFilter, updatePriorityFilter] = useState<IssuePriority | ''>('')
-  const [sortBy, updateSortBy] = useState<SortOption>('updated_desc')
-  const setSearchQuery = (value: string) => { updateSearchQuery(value); setPage(1) }
-  const setStatusFilter = (value: IssueStatus | '') => { updateStatusFilter(value); setPage(1) }
-  const setPriorityFilter = (value: IssuePriority | '') => { updatePriorityFilter(value); setPage(1) }
-  const setSortBy = (value: SortOption) => { updateSortBy(value); setPage(1) }
-  const setTab = (value: 'mine' | 'assigned' | 'reported') => { updateTab(value); setPage(1) }
+  const loadedScope = useRef('')
+  const setPage = (value: number) => update({ page: value })
+  const setSearchQuery = (value: string) => update({ q: value }, true)
+  const setStatusFilter = (value: IssueStatus | '') => update({ status: value })
+  const setPriorityFilter = (value: IssuePriority | '') => update({ priority: value })
+  const setSortBy = (value: SortOption) => update({ order: value })
+  const setTab = (value: 'mine' | 'assigned' | 'reported') => update({ scope: value })
   const setLifecycle = (value: IssueLifecycle) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('view', value)
-    setSearchParams(params)
-    setStatusFilter('')
-    setDeadlineFilter('')
-    if (value === 'completed') setSortBy('updated_desc')
-    setPage(1)
+    update({ view: value, status: '', deadline: '', ...(value === 'completed' ? { order: 'updated_desc' } : {}) })
   }
 
   const loadTasks = useCallback(
@@ -211,6 +200,7 @@ function MyTasks() {
           lifecycle,
         })
         if (version !== requestVersion.current) return
+        loadedScope.current = cacheKey
         setTasks(data)
       } catch {
         if (version === requestVersion.current) setLoadError('Unable to load data. Check your connection and retry.')
@@ -289,6 +279,12 @@ function MyTasks() {
   const pageSize = 12
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / pageSize))
   const currentPage = Math.min(page, totalPages)
+  useEffect(() => {
+    if (!loading && !loadError && page > totalPages
+      && loadedScope.current === `mytasks:${currentProject?.id}:${user?.id}:${tab}:${lifecycle}`) {
+      update({ page: totalPages }, true)
+    }
+  }, [loading, loadError, page, totalPages, currentProject?.id, user?.id, tab, lifecycle, update])
   const pageTasks = filteredTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const groupedTasks = workGroups.map((group) => ({ ...group,
     tasks: pageTasks.filter((task) => workGroup(task, user?.id ?? '', currentRole) === group.key),
@@ -298,12 +294,7 @@ function MyTasks() {
     Boolean(searchQuery.trim()) || Boolean(statusFilter) || Boolean(priorityFilter) || Boolean(deadlineFilter) || tab !== 'mine'
 
   const clearFilters = () => {
-    setSearchQuery('')
-    setStatusFilter('')
-    setPriorityFilter('')
-    setDeadlineFilter('')
-    setTab('mine')
-    setSortBy('updated_desc')
+    update({ q: '', priority: '', status: '', deadline: '', scope: 'mine', order: 'updated_desc' })
   }
 
   const selectedStatusLabel =
@@ -355,7 +346,7 @@ function MyTasks() {
             <FilterSelect label="Priority" value={priorityFilter} onChange={(value) => setPriorityFilter(value as IssuePriority | '')}>
               {priorityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </FilterSelect>
-            {lifecycle !== 'completed' && <FilterSelect label="Deadline" value={deadlineFilter} onChange={(value) => { setDeadlineFilter(value as DeadlineFilter); setPage(1); if (value === 'upcoming') setSortBy('next_deadline_asc') }}>
+            {lifecycle !== 'completed' && <FilterSelect label="Deadline" value={deadlineFilter} onChange={(value) => update({ deadline: value as DeadlineFilter, ...(value === 'upcoming' ? { order: 'next_deadline_asc' } : {}) })}>
               <option value="">Any deadline</option><option value="upcoming">Due soon (next 7 days)</option><option value="overdue">Resolution overdue</option><option value="missed">Missed stage targets</option>
             </FilterSelect>}
             <FilterSelect label="Sort by" value={sortBy} onChange={(value) => setSortBy(value as SortOption)}>
@@ -396,6 +387,7 @@ function MyTasks() {
                         <Link
                           key={task.id}
                           to={`/issues/${task.id}`}
+                          state={{ queueReturn: origin }}
                           className="group flex flex-col justify-between rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-primary/50 transition-colors"
                         >
                           <div>

@@ -1,6 +1,7 @@
 import DeadlineSummary from '../components/DeadlineSummary'
 import IssueListControls, { FilterSelect } from '../components/IssueListControls'
-import { issueLifecycle, matchesLifecycle, type IssueLifecycle } from '../lib/issueWork'
+import { matchesLifecycle, type IssueLifecycle } from '../lib/issueWork'
+import { useIssueQueue } from '../hooks/useIssueQueue'
 import { useDeadlineClock } from '../hooks/useDeadlineClock'
 import type { DeadlineFilter, DeadlineSort } from '../lib/deadlines'
 import LoadError from '../components/LoadError'
@@ -15,7 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
@@ -102,66 +103,34 @@ function Issues() {
   const { currentProject, canReportIssues } = useProject()
   const minute = useDeadlineClock()
   const previousMinute = useRef(minute)
-  const [searchParams, setSearchParams] = useSearchParams()
-  const requestedStatus = searchParams.get('status')
-  const urlStatus: IssueStatus | '' = requestedStatus && Object.hasOwn(statusConfig, requestedStatus) ? requestedStatus as IssueStatus : ''
-  const lifecycle = issueLifecycle(searchParams.get('view'), urlStatus)
-  const statusFilter: IssueStatus | '' = urlStatus && matchesLifecycle(urlStatus, lifecycle) ? urlStatus : ''
-  const assigneeFilter = searchParams.get('assignee') ?? ''
-  const requestedDeadline = searchParams.get('deadline')
-  const deadlineFilter: DeadlineFilter = lifecycle !== 'completed' && (requestedDeadline === 'overdue' || requestedDeadline === 'missed' || requestedDeadline === 'upcoming') ? requestedDeadline : ''
-  const requestedSort = searchParams.get('order')
-  const sortBy: DeadlineSort = requestedSort === 'newest' || requestedSort === 'deadline' || requestedSort === 'next'
-    ? requestedSort : deadlineFilter === 'upcoming' ? 'next' : 'newest'
-
-
-
+  const { state: queue, update, origin } = useIssueQueue('/issues', currentProject?.id ?? '')
+  const { view: lifecycle, status: statusFilter, assignee: assigneeFilter, deadline: deadlineFilter,
+    q: search, priority: priorityFilter, page } = queue
+  const sortBy = queue.order as DeadlineSort
   const [issues, setIssues] = useState<IssueRow[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [page, setPage] = useState(1)
   const requestVersion = useRef(0)
 
-  const [search, setSearch] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState<IssuePriority | ''>('')
+  const setPage = (value: number) => update({ page: value })
+  const setSearch = (value: string) => update({ q: value }, true)
+  const setPriorityFilter = (value: IssuePriority | '') => update({ priority: value })
   const setStatusFilter = (value: IssueStatus | '') => {
-    const params = new URLSearchParams(searchParams)
-    if (value) params.set('status', value)
-    else params.delete('status')
-    if (value && !matchesLifecycle(value, lifecycle)) params.set('view', value === 'DONE' ? 'completed' : 'active')
-    setSearchParams(params)
-    setPage(1)
+    update({ status: value, ...(value && !matchesLifecycle(value, lifecycle) ? { view: value === 'DONE' ? 'completed' : 'active' } : {}) })
   }
   const setAssigneeFilter = (value: string) => {
-    const params = new URLSearchParams(searchParams)
-    if (value) params.set('assignee', value)
-    else params.delete('assignee')
-    setSearchParams(params)
-    setPage(1)
+    update({ assignee: value })
   }
   const setLifecycle = (value: IssueLifecycle) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('view', value)
-    if (statusFilter && !matchesLifecycle(statusFilter, value)) params.delete('status')
-    if (value === 'completed') params.delete('deadline')
-    setSearchParams(params)
-    setPage(1)
+    update({ view: value })
   }
   const setSortBy = (value: DeadlineSort) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('order', value)
-    setSearchParams(params)
-    setPage(1)
+    update({ order: value })
   }
   const setDeadlineFilter = (value: DeadlineFilter) => {
-    const params = new URLSearchParams(searchParams)
-    if (value) params.set('deadline', value)
-    else params.delete('deadline')
-    if (value === 'upcoming') params.set('order', 'next')
-    setSearchParams(params)
-    setPage(1)
+    update({ deadline: value, ...(value === 'upcoming' ? { order: 'next' } : {}) })
   }
 
   useEffect(() => {
@@ -224,6 +193,8 @@ function Issues() {
           forceRefresh ? new Promise((r) => setTimeout(r, 500)) : Promise.resolve(),
         ])
         if (version !== requestVersion.current) return
+        const lastPage = Math.max(1, Math.ceil(res.totalCount / PAGE_SIZE))
+        if (page > lastPage) { update({ page: lastPage }, true); return }
         setIssues(res.issues)
         setTotalCount(res.totalCount)
       } catch {
@@ -236,7 +207,7 @@ function Issues() {
         prefetchMyTasksData(currentProject.id, user.id)
       }
     },
-    [currentProject, user, page, statusFilter, priorityFilter, assigneeFilter, search, deadlineFilter, sortBy, lifecycle],
+    [currentProject, user, page, statusFilter, priorityFilter, assigneeFilter, search, deadlineFilter, sortBy, lifecycle, update],
   )
 
   useEffect(() => {
@@ -252,12 +223,7 @@ function Issues() {
   })
 
   const clearFilters = () => {
-    setSearch('')
-    setPriorityFilter('')
-    const params = new URLSearchParams(searchParams)
-    for (const key of ['status', 'assignee', 'deadline', 'order']) params.delete(key)
-    setSearchParams(params)
-    setPage(1)
+    update({ q: '', priority: '', status: '', assignee: '', deadline: '', order: 'newest' })
   }
 
   const hasFilters = Boolean(search || statusFilter || priorityFilter || assigneeFilter || deadlineFilter)
@@ -320,7 +286,7 @@ function Issues() {
             </div>
           </div>
 
-          <IssueListControls lifecycle={lifecycle} onLifecycleChange={setLifecycle} search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }}
+          <IssueListControls lifecycle={lifecycle} onLifecycleChange={setLifecycle} search={search} onSearchChange={setSearch}
             filterCount={[statusFilter, priorityFilter, assigneeFilter, deadlineFilter].filter(Boolean).length}
             summary={[
               statusFilter ? statusConfig[statusFilter].label : '',
@@ -332,7 +298,7 @@ function Issues() {
               <option value="">Any status</option>
               {(Object.keys(statusConfig) as IssueStatus[]).filter((status) => matchesLifecycle(status, lifecycle)).map((status) => <option key={status} value={status}>{statusConfig[status].label}</option>)}
             </FilterSelect>}
-            <FilterSelect label="Priority" value={priorityFilter} onChange={(value) => { setPriorityFilter(value as IssuePriority | ''); setPage(1) }}>
+            <FilterSelect label="Priority" value={priorityFilter} onChange={(value) => setPriorityFilter(value as IssuePriority | '')}>
               <option value="">Any priority</option>
               {(Object.keys(priorityConfig) as IssuePriority[]).map((priority) => <option key={priority} value={priority}>{priorityConfig[priority].label}</option>)}
             </FilterSelect>
@@ -377,7 +343,7 @@ function Issues() {
                     return (
                       <div
                         key={issue.id}
-                        onClick={() => navigate(`/issues/${issue.id}`)}
+                        onClick={() => navigate(`/issues/${issue.id}`, { state: { queueReturn: origin } })}
                         className={`cursor-pointer p-md transition-colors hover:bg-surface-container-low ${
                           issue.status === 'FAILED' ? 'bg-rose-50/20' : ''
                         }`}
@@ -449,7 +415,7 @@ function Issues() {
                         return (
                           <tr
                             key={issue.id}
-                            onClick={() => navigate(`/issues/${issue.id}`)}
+                            onClick={() => navigate(`/issues/${issue.id}`, { state: { queueReturn: origin } })}
                             className={`cursor-pointer transition-colors hover:bg-surface-container-low group ${
                               issue.status === 'FAILED' ? 'bg-rose-50/15' : ''
                             }`}
@@ -533,7 +499,7 @@ function Issues() {
                   <button
                     type="button"
                     disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    onClick={() => setPage(Math.max(1, page - 1))}
                     title="Previous page"
                     aria-label="Previous page"
                     className="flex h-8 w-8 items-center justify-center rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
@@ -561,7 +527,7 @@ function Issues() {
                   <button
                     type="button"
                     disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() => setPage(Math.min(totalPages, page + 1))}
                     title="Next page"
                     aria-label="Next page"
                     className="flex h-8 w-8 items-center justify-center rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
