@@ -164,22 +164,33 @@ test('metadata projection and status do not contain credentials or claim a live 
   assert.equal(connectionStatus({ ...connection, revoked_at: '2026-11-01' }, false, false, true, now), 'Revoked')
 })
 
-test('actual setup guide renders secure setup, approval and read-only verification in order', () => {
-  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, {
-    setup, accessControls: createElement('p', null, 'Owner approval slot'), canReview: true,
-  })))
-  assert.ok(html.indexOf('1. Prepare your client') < html.indexOf('2. Get Owner-approved access'))
-  assert.ok(html.indexOf('2. Get Owner-approved access') < html.indexOf('3. Verify in your client'))
-  assert.match(html, /Read-Host/)
-  assert.match(html, /Owner approval slot/)
-  assert.match(html, /Pending Review/)
-  assert.match(html, /trackqa_submit_finding/)
-  assert.match(html, /href="\/ai-findings"/)
-  assert.match(html, /not a live IDE connection/)
-  assert.ok(!html.includes(TOKEN))
+test('setup keeps raw configuration and launcher inside collapsed Advanced details', () => {
+  for (const client of ['codex', 'claude', 'generic']) {
+    const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, { setup, client, phase: 'prepare' })))
+    assert.match(html, /<details[^>]*><summary/)
+    assert.doesNotMatch(html, /<details[^>]*open/)
+    assert.ok(html.indexOf(setup.endpoint) > html.indexOf('<details'))
+    assert.ok(!html.includes(TOKEN))
+    if (client !== 'generic') {
+      assert.ok(html.indexOf('Read-Host') > html.indexOf('<details'))
+      assert.match(html, /Copy configuration/)
+      assert.match(html, /Copy secure launcher/)
+    }
+    assert.match(html, /cannot configure your local IDE/)
+  }
 })
-test('non-reviewers get guidance without a link to the QA/Owner review page', () => {
-  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, { setup, accessControls: null, canReview: false })))
+test('verification explains human review and does not claim an observed connection', () => {
+  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, {
+    setup, client: 'codex', phase: 'verify', canReview: true,
+  })))
+  assert.match(html, /Pending Review/)
+  assert.match(html, /href="\/ai-findings"/)
+  assert.match(html, /cannot detect a live IDE connection/)
+  assert.ok(html.indexOf('trackqa_submit_finding') > html.indexOf('<details'))
+  assert.doesNotMatch(html, /<details[^>]*open/)
+})
+test('non-reviewers get guidance without a review link', () => {
+  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, { setup, client: 'generic', phase: 'verify' })))
   assert.doesNotMatch(html, /href="\/ai-findings"/)
-  assert.match(html, /Only a human QA\/Owner/)
+  assert.match(html, /human QA\/Owner/)
 })
