@@ -3,10 +3,10 @@
 Client-neutral command flow with **Codex CLI (live accepted)**,
 **Gemini CLI (local adapter; hosted acceptance deferred by native authentication failure)**,
 **Claude Code (local adapter; hosted acceptance blocked by account eligibility)**,
-and **VS Code Local (experimental; hosted discovery validated, read execution pending)**. No package has been
+and **VS Code Local (experimental; Windows hosted read-only acceptance passed)**. No package has been
 published; `npx trackqa connect` is a future product interface, not a working command.
 
-## Consolidated client status — Phase 3H
+## Consolidated client status
 
 | Client | Implemented | Verification and current limit |
 | --- | --- | --- |
@@ -14,13 +14,13 @@ published; `npx trackqa connect` is a future product interface, not a working co
 | Gemini CLI | Yes, Windows; experimental | Gemini 0.66.0 isolated native configuration checks passed. Authenticated startup failed through both the connector and direct native launch; exact native exception is unknown. Hosted acceptance is deferred. |
 | Claude Code | Yes, Windows; experimental | Claude 2.1.316 executable integrity, version and session-config flags were verified. Account sign-in was blocked because the test account has only the free plan. Header expansion, strict isolation, authenticated readiness and normal foreground exit remain unverified. |
 | Antigravity IDE | No | IDE 2.6.0 was inspected. Safe isolation of backend, authentication and configuration was not established, so no second IDE or synthetic MCP experiment was launched. |
-| VS Code Local | Yes, Windows; experimental | VS Code 1.143.1 integrated native lifecycle, isolation, shutdown and cleanup passed. Hosted MCP initialization and exactly five-tool discovery passed; token revocation and fixture restoration passed. The four authorized read-only calls were not executed. Local model access requires GitHub/Copilot sign-in; account eligibility remains unknown. |
+| VS Code Local | Yes, Windows; experimental | VS Code 1.143.1 hosted acceptance passed: five-tool discovery, all four scoped read-only calls, token revocation, fixture restoration and local cleanup. Same-session GitHub/Copilot model access passed. Write-tool execution, authentication persistence and the separate Copilot harness remain unvalidated. |
 
-Only Codex has full hosted acceptance. VS Code has validated hosted initialization
-and discovery, but not read-tool execution; Gemini and Claude remain blocked as
-described above. Local checks and advertised flags alone do not establish an
-authenticated MCP connection. No backend, authorization or five-tool contract
-changes are part of this connector consolidation.
+Codex CLI and Windows VS Code Local have passed supervised hosted read-only
+acceptance. VS Code Local remains experimental within the limits above; Gemini
+and Claude remain blocked as described. Local checks and advertised flags alone
+do not establish an authenticated MCP connection. No backend, authorization or
+five-tool contract changes are part of this connector consolidation.
 
 ## Local usage
 
@@ -34,7 +34,7 @@ node --experimental-strip-types tools/trackqa-connect/src/cli.ts connect --clien
 node --experimental-strip-types tools/trackqa-connect/src/cli.ts disconnect --client codex
 ```
 
-## Experimental VS Code Local adapter — consolidated Phase 3H
+## Experimental VS Code Local adapter - hosted read-only acceptance
 
 Select `--client vscode` for connect/status/disconnect. Optional `--vscode-path`
 selects an existing installed native `Code.exe`; no software is installed. Only
@@ -58,6 +58,9 @@ The only MCP entry uses native `servers`, `type: "http"`, the fixed TrackQA URL
 and `Authorization: "Bearer ${env:TRACKQA_..._VSCODE}"`. No literal token is
 written. Dedicated user-data, extensions and home directories, sync off, disabled
 updates/telemetry and in-memory secret storage match the isolated synthetic test.
+The editor opens an empty window without a positional startup file. Native MCP
+configuration remains at `user-data/User/mcp.json` and is discovered independently;
+this avoids loose-file trust prompts without disabling Workspace Trust.
 Environment inheritance is allowlisted; the token is supplied only to the new
 editor process and its children. Existing IPC routing, provider credentials,
 preloads, debug variables and TLS bypass settings are excluded. Proxy values are
@@ -107,32 +110,41 @@ configuration changes retain the journal for manual review.
   observed boolean-to-string normalization without relaxing fingerprint checks.
 - **Hosted discovery validated:** the server reached Running and exposed exactly
   `trackqa_connection_status`, `trackqa_list_projects`, `trackqa_list_issues`,
-  `trackqa_get_issue` and `trackqa_submit_finding`. The temporary connection was
-  revoked and the synthetic fixture restored to MCP-disabled through separately
-  authorized Owner controls. No finding was submitted or issue modified.
-- **Read execution not validated:** none of the four authorized read-only calls
-  ran. Discovery does not establish successful tool execution or scoped response
-  consistency. The CLI still reports manual verification required.
-- **Model access blocked:** a subsequent token-free inspection of the Local
-  harness required GitHub/Copilot sign-in/setup. No sign-in or chat request ran;
-  account eligibility and any subscription requirement remain unknown. This does
-  not add support for the separate Copilot harness.
-- **Workspace trust is explicit:** the user trusted only a verified empty window
-  in the isolated profile; no filesystem folder was trusted. Trust may be needed
-  again for another empty window and must not be approved automatically or
-  extended to a repository or parent directory.
+  `trackqa_get_issue` and `trackqa_submit_finding`.
+- **Hosted read execution validated (Phase 4B.10):** all four read-only tools
+  above ran successfully through the supervised Windows Local session. Results
+  matched only the approved synthetic project and existing MCPPILOT-2. The issue
+  baseline and issue/finding inventories were unchanged. Revocation, fixture
+  disablement, Owner sign-out and local cleanup were verified. Automated CLI
+  verification still reports manual verification required and leaves its
+  timestamp unset.
+- **Write execution not validated for this adapter:** `trackqa_submit_finding`
+  was discovered but never invoked. Read-only acceptance does not validate
+  finding submission through VS Code Local.
+- **Same-session model access validated:** native GitHub/Copilot sign-in and Auto
+  model execution passed in Local. Authentication persistence after restart remains
+  unvalidated; keep sign-in and MCP calls in the same editor process. Model access
+  and account eligibility are prerequisites, not connector-provided credentials.
+  The separate Copilot harness and provider-extension integrations remain unvalidated.
+- **Workspace trust remains enforced:** corrected empty-window launch and native
+  profile MCP discovery passed without a new Workspace Trust approval. No
+  filesystem folder was trusted. Do not automatically trust a repository or
+  parent directory, or disable Workspace Trust to bypass a prompt.
 
-Before another hosted attempt, separately approve model-account authentication
-and establish Local model availability without a TrackQA token. Only then seek
-fresh Owner approval for hosted read-only acceptance and explicit restoration of
-the fixture's original enablement state. The connector does not restore that
-project-wide flag automatically. No current validation authorizes further access.
+Future hosted runs require fresh Owner preflight and explicit activation approval.
+The connection token must be issued before editor launch for child-environment
+injection; complete model sign-in and MCP execution in that same window. Explicit
+fixture restoration still uses Owner controls: the connector does not restore
+project-wide enablement automatically. Isolated-home browser processes can outlive
+VS Code; their cleanup and scan coverage must be verified separately, preserving
+unrelated browser sessions and recovery evidence on uncertainty. No acceptance
+result authorizes ongoing access or bypasses model-account consent.
 
-Phase 3H consolidation checks passed: **182 connector tests passed, two optional
-native tests skipped**, plus TypeScript, lint and CLI build. These offline checks
-include existing Codex/Gemini/Claude regressions, strict configuration ownership,
-token-free settings and interrupted revocation/process recovery. They do not
-replace the remaining hosted read-tool acceptance.
+Phase 4B.11 consolidation checks: **183 connector tests passed, two optional native
+tests skipped**, plus TypeScript, lint and CLI build. Coverage includes empty-window
+launch with profile MCP configuration retained, existing Codex/Gemini/Claude
+regressions, ownership checks, token-free settings and interrupted recovery.
+Offline tests and supervised hosted acceptance are distinct evidence.
 
 The supervised Phase 1 hosted acceptance test has passed. Future hosted test runs
 still require separate explicit Owner authorization; this baseline is not ongoing

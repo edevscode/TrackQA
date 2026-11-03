@@ -129,6 +129,26 @@ test('launch arguments isolate user-data, extensions, sync and secret storage wi
   for(const flag of ['--new-window','--disable-updates','--disable-telemetry','--use-inmemory-secretstorage'])assert.ok(args.includes(flag))
   assert.equal(args[args.indexOf('--sync')+1],'off');assert.ok(!args.includes('--disable-workspace-trust'));assert.ok(!args.includes('--install-extension'))
 })
+test('empty-window launch has no startup file while native MCP configuration stays installed in the isolated profile',async t=>{
+  const f=await fixture(t),hash=await f.adapter.install(setup),before=await readFile(f.files.mcp)
+  assert.equal(f.files.mcp,path.join(f.files.user,'User','mcp.json'))
+  assert.deepEqual(JSON.parse(before.toString('utf8')),{servers:{[setup.serverName]:vscodeEntry(setup)}})
+  assert.ok(!before.toString('utf8').includes(TOKEN))
+  await f.adapter.launch(setup,TOKEN)
+  const values=new Map([['--user-data-dir',f.files.user],['--extensions-dir',f.files.extensions],['--sync','off'],['--log','warning']])
+  const switches=new Set(['--new-window','--skip-welcome','--skip-release-notes','--disable-updates','--disable-telemetry','--use-inmemory-secretstorage'])
+  const seen=new Set(),args=f.snapshot.args
+  for(let i=0;i<args.length;i++){
+    const flag=args[i]
+    assert.ok(values.has(flag)||switches.has(flag),'Unexpected launch option or positional startup path')
+    assert.ok(!seen.has(flag));seen.add(flag)
+    if(values.has(flag))assert.equal(args[++i],values.get(flag))
+  }
+  assert.equal(seen.size,values.size+switches.size)
+  assert.deepEqual(await readFile(f.files.mcp),before)
+  await f.adapter.remove(setup,hash)
+})
+
 test('only child environment gets token; standard homes are isolated and ambient IPC, credentials and preloads are excluded',async t=>{
   const f=await fixture(t),hash=await f.adapter.install(setup);await f.adapter.launch(setup,TOKEN)
   assert.equal(f.spawned,1);assert.equal(f.snapshot.env[setup.envVar],TOKEN);assert.equal(f.heldEnv[setup.envVar],undefined)

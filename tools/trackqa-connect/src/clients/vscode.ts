@@ -64,7 +64,7 @@ export function vscodeEnvironment(home: string, setup: Setup, source: NodeJS.Pro
 export function vscodeLaunchArgs(home: string, setup: Setup) {
   const files = vscodePaths(home, setup)
   return ['--new-window', '--user-data-dir', files.user, '--extensions-dir', files.extensions, '--skip-welcome', '--skip-release-notes',
-    '--disable-updates', '--disable-telemetry', '--sync', 'off', '--use-inmemory-secretstorage', '--log', 'warning', files.mcp]
+    '--disable-updates', '--disable-telemetry', '--sync', 'off', '--use-inmemory-secretstorage', '--log', 'warning']
 }
 export const vscodeVerification = () => ({ authorized: null, verified: false, code: 'manual_verification_required' })
 export function vscodeInstructions(setup: Setup) {
