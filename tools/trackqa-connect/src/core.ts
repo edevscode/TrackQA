@@ -5,7 +5,7 @@ export const SUPABASE_URL = 'https://mzeuimqfrswrwoaqjdmp.supabase.co'
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export const TOKEN = /^tqm_[0-9a-f]{64}$/
 export const tools = mcpTools.map(tool => tool.name)
-export type Client = 'codex' | 'gemini' | 'claude'
+export type Client = 'codex' | 'gemini' | 'claude' | 'vscode'
 export const setupFor = (id: string, client: Client = 'codex') => {
   const setup = mcpSetup(SUPABASE_URL, id)
   return client === 'codex' ? setup : { ...setup, serverName: `${setup.serverName}_${client}`, envVar: `${setup.envVar}_${client.toUpperCase()}` }
@@ -33,15 +33,16 @@ export function parseArgs(args: string[]): Options {
     seen.add(flag)
     if (flag === '--claude-only') { result.claudeOnly = true; continue }
     const value = args[++i]
-    requireValue(['--client', '--codex-path', '--gemini-path', '--claude-path', '--project'].includes(flag) && value && !value.startsWith('--'), 'usage')
-    if (flag === '--client') { requireValue(['codex', 'gemini', 'claude'].includes(value), 'client_unsupported'); result.client = value as Client }
-    if (['--codex-path', '--gemini-path', '--claude-path'].includes(flag)) result.executable = value
+    requireValue(['--client', '--codex-path', '--gemini-path', '--claude-path', '--vscode-path', '--project'].includes(flag) && value && !value.startsWith('--'), 'usage')
+    if (flag === '--client') { requireValue(['codex', 'gemini', 'claude', 'vscode'].includes(value), 'client_unsupported'); result.client = value as Client }
+    if (['--codex-path', '--gemini-path', '--claude-path', '--vscode-path'].includes(flag)) result.executable = value
     if (flag === '--project') { requireValue(UUID.test(value), 'usage'); result.projectId = value.toLowerCase() }
   }
-  requireValue(['--codex-path', '--gemini-path', '--claude-path'].filter(flag => seen.has(flag)).length <= 1
+  requireValue(['--codex-path', '--gemini-path', '--claude-path', '--vscode-path'].filter(flag => seen.has(flag)).length <= 1
     && (!seen.has('--gemini-path') || result.client === 'gemini')
     && (!seen.has('--codex-path') || !result.client || result.client === 'codex')
     && (!seen.has('--claude-path') || result.client === 'claude')
+    && (!seen.has('--vscode-path') || result.client === 'vscode')
     && (!result.claudeOnly || (result.client === 'claude' && result.command === 'connect')), 'usage')
   return result
 }

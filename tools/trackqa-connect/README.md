@@ -2,10 +2,11 @@
 
 Client-neutral command flow with **Codex CLI (live accepted)**,
 **Gemini CLI (local adapter; hosted acceptance deferred by native authentication failure)**,
-and **Claude Code (local adapter; hosted acceptance blocked by account eligibility)**. No package has been
+**Claude Code (local adapter; hosted acceptance blocked by account eligibility)**,
+and **VS Code Local (experimental; hosted discovery validated, read execution pending)**. No package has been
 published; `npx trackqa connect` is a future product interface, not a working command.
 
-## Consolidated Phase 2 status
+## Consolidated client status — Phase 3H
 
 | Client | Implemented | Verification and current limit |
 | --- | --- | --- |
@@ -13,9 +14,11 @@ published; `npx trackqa connect` is a future product interface, not a working co
 | Gemini CLI | Yes, Windows; experimental | Gemini 0.66.0 isolated native configuration checks passed. Authenticated startup failed through both the connector and direct native launch; exact native exception is unknown. Hosted acceptance is deferred. |
 | Claude Code | Yes, Windows; experimental | Claude 2.1.316 executable integrity, version and session-config flags were verified. Account sign-in was blocked because the test account has only the free plan. Header expansion, strict isolation, authenticated readiness and normal foreground exit remain unverified. |
 | Antigravity IDE | No | IDE 2.6.0 was inspected. Safe isolation of backend, authentication and configuration was not established, so no second IDE or synthetic MCP experiment was launched. |
+| VS Code Local | Yes, Windows; experimental | VS Code 1.143.1 integrated native lifecycle, isolation, shutdown and cleanup passed. Hosted MCP initialization and exactly five-tool discovery passed; token revocation and fixture restoration passed. The four authorized read-only calls were not executed. Local model access requires GitHub/Copilot sign-in; account eligibility remains unknown. |
 
-Only Codex is live-validated. The other implemented adapters must not be described
-as accepted integrations. Local checks and advertised flags do not establish an
+Only Codex has full hosted acceptance. VS Code has validated hosted initialization
+and discovery, but not read-tool execution; Gemini and Claude remain blocked as
+described above. Local checks and advertised flags alone do not establish an
 authenticated MCP connection. No backend, authorization or five-tool contract
 changes are part of this connector consolidation.
 
@@ -30,6 +33,106 @@ node --experimental-strip-types tools/trackqa-connect/src/cli.ts status --client
 node --experimental-strip-types tools/trackqa-connect/src/cli.ts connect --client codex
 node --experimental-strip-types tools/trackqa-connect/src/cli.ts disconnect --client codex
 ```
+
+## Experimental VS Code Local adapter — consolidated Phase 3H
+
+Select `--client vscode` for connect/status/disconnect. Optional `--vscode-path`
+selects an existing installed native `Code.exe`; no software is installed. Only
+Windows stable VS Code **1.143.x** is accepted initially. Detection reads installed
+product/package metadata and supported CLI flags without launching an editor.
+It checks canonical installation paths and rechecks executable/build-input hashes
+before launch. These fingerprints detect changes; they do not establish publisher
+authenticity or audit every installed binary/library. Portable mode and forks fail
+closed. Existing Codex, Gemini and Claude behavior is preserved.
+
+The connector creates its own project-specific profile under
+`%LOCALAPPDATA%\TrackQA-Connect\vscode-sessions\<project UUID>`. It never edits
+your usual `.vscode/mcp.json`, workspace-root `.mcp.json`, Code user settings or
+installed extensions. A fixed ownership marker is required before reusing this
+directory. Existing unknown folders, changed settings and unexpected entries are
+preserved and refused. Writes use exclusive creation and flush; a crash/partial
+write is not automatically overwritten or treated as a complete installation.
+Same-account external writers are not coordinated by a filesystem transaction.
+
+The only MCP entry uses native `servers`, `type: "http"`, the fixed TrackQA URL
+and `Authorization: "Bearer ${env:TRACKQA_..._VSCODE}"`. No literal token is
+written. Dedicated user-data, extensions and home directories, sync off, disabled
+updates/telemetry and in-memory secret storage match the isolated synthetic test.
+Environment inheritance is allowlisted; the token is supplied only to the new
+editor process and its children. Existing IPC routing, provider credentials,
+preloads, debug variables and TLS bypass settings are excluded. Proxy values are
+potentially secret and never printed. OS-account processes/trusted subprocesses
+can still inspect or inherit the environment; this is not an OS security boundary.
+
+This is **Local harness only**, not Copilot, Codex-extension or Claude-extension
+support. The new window is titled **TrackQA Local**. Use Command Palette >
+**MCP: List Servers** > the displayed TrackQA server > **Start Server**. Review
+server trust and **Show Output**. A discovered configuration or launched editor
+does not verify MCP initialization, five-tool discovery or project access. The
+connector always reports manual verification required and leaves its verification
+timestamp unset. Local/model-account eligibility and enterprise policy may block
+usage; no model login is automated. A new isolated profile does not inherit the
+normal editor's model-account login. Local is a VS Code compatibility harness;
+do not silently switch to Copilot if it is unavailable.
+
+Use **File > Exit** to close the entire isolated instance and return to the
+connector. The existing workflow revokes and reads back the connection before
+removing configuration. Project-wide MCP enablement is not silently reversed.
+The server's existing 90-day default expiry remains unchanged; session revocation
+makes access temporary. Power loss or expired Owner authentication still requires
+independent revocation in Manage Connections or `disconnect --client vscode`.
+
+Process metadata contains only a launch phase and PID/creation-time baseline,
+never tokens or raw command lines. Exit is checked using Windows process metadata,
+not merely the editor's main-process exit event. Interrupt requests a graceful
+close only for the identified owned main window; no forced kill runs. Remaining
+owned processes, failed queries or even a newly opened unrelated Code instance
+cause conservative refusal. Revocation is still attempted, configuration and
+recovery metadata are retained, and no unrelated process is closed. A crash in
+the spawn/acknowledgement gap retains a pending marker and requires manual process
+review; do not delete `process.json` merely to bypass recovery. Other acknowledged
+runs can be settled by disconnect once their process state is confirmed.
+
+Disconnect deletes only the exact owned MCP/settings files. The ownership marker
+and runtime-generated profile data are deliberately retained because they may
+include user-created files; there is no recursive profile deletion. Unexpected
+configuration changes retain the journal for manual review.
+
+### Validated behavior and remaining acceptance boundary
+
+- **Native lifecycle validated:** the integrated adapter launched its isolated
+  instance, delivered a synthetic credential through the child environment,
+  detected normal shutdown and removed only owned configuration. Unexpected files
+  were preserved. The canonical `extensions.autoUpdate: "off"` setting avoids the
+  observed boolean-to-string normalization without relaxing fingerprint checks.
+- **Hosted discovery validated:** the server reached Running and exposed exactly
+  `trackqa_connection_status`, `trackqa_list_projects`, `trackqa_list_issues`,
+  `trackqa_get_issue` and `trackqa_submit_finding`. The temporary connection was
+  revoked and the synthetic fixture restored to MCP-disabled through separately
+  authorized Owner controls. No finding was submitted or issue modified.
+- **Read execution not validated:** none of the four authorized read-only calls
+  ran. Discovery does not establish successful tool execution or scoped response
+  consistency. The CLI still reports manual verification required.
+- **Model access blocked:** a subsequent token-free inspection of the Local
+  harness required GitHub/Copilot sign-in/setup. No sign-in or chat request ran;
+  account eligibility and any subscription requirement remain unknown. This does
+  not add support for the separate Copilot harness.
+- **Workspace trust is explicit:** the user trusted only a verified empty window
+  in the isolated profile; no filesystem folder was trusted. Trust may be needed
+  again for another empty window and must not be approved automatically or
+  extended to a repository or parent directory.
+
+Before another hosted attempt, separately approve model-account authentication
+and establish Local model availability without a TrackQA token. Only then seek
+fresh Owner approval for hosted read-only acceptance and explicit restoration of
+the fixture's original enablement state. The connector does not restore that
+project-wide flag automatically. No current validation authorizes further access.
+
+Phase 3H consolidation checks passed: **182 connector tests passed, two optional
+native tests skipped**, plus TypeScript, lint and CLI build. These offline checks
+include existing Codex/Gemini/Claude regressions, strict configuration ownership,
+token-free settings and interrupted revocation/process recovery. They do not
+replace the remaining hosted read-tool acceptance.
 
 The supervised Phase 1 hosted acceptance test has passed. Future hosted test runs
 still require separate explicit Owner authorization; this baseline is not ongoing
@@ -415,12 +518,13 @@ record. Disconnect can then be retried explicitly.
   The executable SHA-256 is rechecked before commands. This detects replacement,
   not publisher authenticity; trusted installation permissions remain an OS premise.
 - Only the connector-owned configuration is managed: Codex uses native commands,
-  Gemini uses the scoped JSON editor, and Claude uses a private temporary session
-  file. Fingerprints and prechecks prevent silent overwrites. External settings
+  Gemini uses the scoped JSON editor, Claude uses a private temporary session
+  file, and VS Code uses a dedicated isolated profile with exact owned files.
+  Fingerprints and prechecks prevent silent overwrites. External settings
   writers are not coordinated by a cross-application transaction.
 - Real connect/disconnect currently support **Windows only**. The callback launcher
   is the existing Windows implementation. macOS/Linux/WSL/SSH/containers and OS
-  keychains have not been validated. Only Codex/Gemini/Claude adapters exist;
+  keychains have not been validated. Only Codex/Gemini/Claude/VS Code Local adapters exist;
   Antigravity and all other clients remain unimplemented.
 - npm packaging/publishing, member approval, permanent credential storage and
   automatic reconnection are outside Phase 1. This standalone local CLI reuses

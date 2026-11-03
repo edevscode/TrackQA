@@ -86,7 +86,7 @@ export async function connect({ owner, adapter, store, ui, projectId, signal }: 
   if (!await ui.confirm('Install this token-free configuration?')) return
   requireValue(!signal?.aborted, 'interrupted')
   const record: RecordState = { projectId: project.id, userId: owner.userId, client, executable: adapter.executable.path,
-    ...(client === 'claude' ? { claudeHome: adapterHome(adapter) } : client === 'gemini' ? { geminiHome: adapterHome(adapter) } : { codexHome: adapterHome(adapter) }), clientLabel: `TrackQA Connect ${randomUUID()}`, connectionId: null,
+    ...(client === 'vscode' ? { vscodeHome: adapterHome(adapter) } : client === 'claude' ? { claudeHome: adapterHome(adapter) } : client === 'gemini' ? { geminiHome: adapterHome(adapter) } : { codexHome: adapterHome(adapter) }), clientLabel: `TrackQA Connect ${randomUUID()}`, connectionId: null,
     phase: 'planned', installed: false, configHash: null, lastVerifiedAt: null }
   await store.save(record)
   let token = ''
@@ -135,6 +135,7 @@ export async function connect({ owner, adapter, store, ui, projectId, signal }: 
     ui.say(`Session cleanup: local configuration ${result.removed ? 'removed' : 'UNCONFIRMED'}; remote revocation ${result.revoked ? 'confirmed or not needed' : 'UNCONFIRMED'}.`)
     if (result.unresolved.length) {
       if (client === 'gemini') ui.say('Preserve settings.json and any .trackqa-settings-recovery-*.bak in the Gemini home. Compare/merge before recovery; never restore over an unexpected external edit or retry an uncertain write automatically.')
+      if (client === 'vscode') ui.say('Close the entire TrackQA Local instance. Keep its process.json and recovery record until termination is verified; do not remove a pending marker to bypass recovery. Generated IDE data and unexpected files are preserved.')
       ui.say(`Recovery required: run disconnect --client ${client} --project ${project.id}, or ask a project Owner to revoke the connection in Manage Connections. Keep the nonsecret recovery record. No token was saved.`)
       failure = new ConnectorError('cleanup_unconfirmed')
     }
