@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { createInterface } from 'node:readline/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -8,6 +9,9 @@ import { codexAdapter, detectCodex } from './clients/codex.ts'
 import { geminiAdapter, detectGemini } from './clients/gemini.ts'
 import { claudeAdapter, detectClaude } from './clients/claude.ts'
 import { vscodeAdapter, detectVSCode } from './clients/vscode.ts'
+import { vscodeCopilotAdapter } from './clients/vscode-copilot.ts'
+import { copilotRecoveryHome, freshCopilotHome } from './clients/vscode-copilot-session.ts'
+import { recordHome } from './state.ts'
 import { adapterLabel } from './clients/adapter.ts'
 import type { Client } from './core.ts'
 import { ConnectorError, display, parseArgs, requireValue } from './core.ts'
@@ -15,21 +19,26 @@ import { Store } from './state.ts'
 import { connect, disconnect, status } from './workflow.ts'
 import type { UI } from './workflow.ts'
 
-export const help = `TrackQA Connect - local Windows prototype (not published)
-Usage from the TrackQA repository:
-  node --experimental-strip-types tools/trackqa-connect/src/cli.ts connect --client codex
-  node --experimental-strip-types tools/trackqa-connect/src/cli.ts status --client codex
-  node --experimental-strip-types tools/trackqa-connect/src/cli.ts disconnect --client codex
-Use --client gemini for Gemini CLI; connect/status/disconnect use the same flow.
-Use --client claude for the local, native-unverified Claude Code adapter.
-Use --client vscode for experimental, isolated VS Code Local harness sessions.
+export const help = `TrackQA Connect 0.1.0 - Windows, Owner-operated MVP release candidate
+Usage after installing the approved package or local tarball:
+  trackqa connect --client codex
+  trackqa status --client codex
+  trackqa disconnect --client codex
+Intended registry workflow after publication: npx trackqa connect
+Codex CLI: MVP-supported candidate; Windows hosted acceptance passed.
+Gemini CLI and Claude Code: experimental; hosted validation deferred.
+VS Code Local (--client vscode): experimental; hosted read-only acceptance passed.
+VS Code Copilot (--client vscode-copilot): experimental; hosted read-only acceptance passed; ordinary connect remains guarded before authentication.
+Antigravity: deferred; no adapter.
 Optional: --project <project UUID> --codex-path <trusted absolute native executable>
 Gemini optional: --gemini-path <installed @google/gemini-cli package bin .js>
 Claude optional: --claude-path <trusted absolute native claude.exe>
 VS Code optional: --vscode-path <trusted installed absolute Code.exe>; supported family 1.143.x.
 Claude connect only: --claude-only excludes other MCP servers for this session (opt-in).
-Windows Codex, Gemini, Claude Code and VS Code Local adapters are implemented. None is selected by default.
-Connect requires an interactive terminal and Google Owner authorization. No token is saved.
+No client is selected by default. AI-client accounts are separate from TrackQA sign-in.
+Requires Node >=22.19, Windows, a free localhost callback port 5173 and Google Owner authorization; MFA accounts are unsupported.
+Set TRACKQA_PUBLIC_KEY to the deployment's public anon/publishable key. Never supply a secret or service-role key.
+No bearer token is saved. The existing 90-day token expiry is unchanged; session cleanup attempts and independently verifies revocation.
 Status is local-only: it does not authorize or test a live MCP connection.
 Disconnect may require fresh Google Owner sign-in. Never pass credentials as arguments.`
 
@@ -50,10 +59,11 @@ export async function locations(env: NodeJS.ProcessEnv = process.env, client: Cl
     const resolved = await realpath(config).catch(() => config)
     requireValue(resolved.toLowerCase() === config.toLowerCase(), 'configuration_location_untrusted')
   }
-  return { codexHome: canonical, geminiHome: geminiCanonical, claudeHome: path.join(data, 'TrackQA-Connect', 'claude-sessions'), vscodeHome: path.join(data, 'TrackQA-Connect', 'vscode-sessions'), store: new Store(path.join(data, 'TrackQA-Connect')) }
+  return { codexHome: canonical, geminiHome: geminiCanonical, claudeHome: path.join(data, 'TrackQA-Connect', 'claude-sessions'), vscodeHome: path.join(data, 'TrackQA-Connect', 'vscode-sessions'), vscodeCopilotHome: path.join(data, 'TrackQA-Connect', 'vscode-copilot-sessions'), store: new Store(path.join(data, 'TrackQA-Connect')) }
 }
 const codes = new Set(`usage configuration_busy configuration_write_failed configuration_write_uncertain gemini_auto_update_enabled gemini_compatibility_unverified client_unsupported client_foreground_unsupported client_not_found executable_untrusted executable_changed public_key_required authentication_failed callback_port_in_use callback_unavailable callback_timeout callback_rejected oauth_denied oauth_failed browser_open_failed interrupted identity_unverified profile_required mfa_unsupported owner_required no_eligible_owner_projects project_unavailable project_selection_unavailable request_failed response_invalid response_limit signout_unconfirmed configuration_unreadable configuration_conflict configuration_changed configuration_home_mismatch configuration_location_untrusted installation_unconfirmed removal_unconfirmed recovery_invalid recovery_unavailable existing_connection_recover_first connector_busy_or_stale_lock enablement_unconfirmed issuance_unconfirmed token_invalid cleanup_unconfirmed no_managed_connections client_command_failed client_command_timeout client_response_limit client_launch_failed client_exit_failed verification_initialization_failed verification_discovery_failed verification_connection_status_failed verification_project_scope_failed`.split(' '))
 export function safeCode(error: unknown) {
+  if (error instanceof ConnectorError && ['copilot_runtime_unverified', 'copilot_process_unconfirmed'].includes(error.code)) return error.code
   if (error instanceof ConnectorError && error.code === 'vscode_process_unconfirmed') return error.code
   if (error instanceof ConnectorError && codes.has(error.code)) return error.code
   if (error instanceof Error && error.message === 'connector_busy_or_stale_lock') return error.message
@@ -91,9 +101,43 @@ export async function main(args = process.argv.slice(2)) {
         return Number(input) - 1
       },
     }
-    const client = options.client ?? (['codex', 'gemini', 'claude', 'vscode'] as const)[await ui.choose('Select a supported client', ['Codex CLI', 'Gemini CLI', 'Claude Code (native validation pending)', 'VS Code Local (experimental; manual activation)'])]
+    const client = options.client ?? (['codex', 'gemini', 'claude', 'vscode', 'vscode-copilot'] as const)[await ui.choose('Select a client (see validation limits)', ['Codex CLI (MVP-supported candidate)', 'Gemini CLI (experimental; hosted validation deferred)', 'Claude Code (experimental; hosted validation deferred)', 'VS Code Local (experimental; manual activation)', 'VS Code Copilot (experimental; hosted reads passed; connect guarded)'])]
     const paths = await locations(process.env, client)
-    const adapter = client === 'vscode'
+    const copilotControls = {
+      report: ui.say,
+      async requestDisconnect(signal: AbortSignal) {
+        requireValue(process.stdin.isTTY && process.stdout.isTTY, 'usage')
+        prompt ??= createInterface({ input: process.stdin, output: process.stdout })
+        while (!signal.aborted) {
+          const input = await prompt.question('Type disconnect to revoke TrackQA access: ', { signal })
+          if (input.trim().toLowerCase() === 'disconnect') return
+          ui.say('Enter disconnect to end TrackQA access. No input is logged.')
+        }
+        throw new ConnectorError('interrupted')
+      },
+    }
+    let copilotHome = paths.vscodeCopilotHome
+    if (client === 'vscode-copilot') {
+      const records = (await paths.store.read()).filter(row => row.client === client && (!options.projectId || row.projectId === options.projectId))
+      if (options.command === 'connect') {
+        requireValue(!(await paths.store.read()).some(row => row.client === client), 'existing_connection_recover_first')
+        copilotHome = freshCopilotHome(paths.vscodeCopilotHome)
+      } else if (options.command === 'status') {
+        const exe = await detectVSCode(options.executable)
+        if (!records.length) { await status(paths.store, vscodeCopilotAdapter(exe, copilotHome, copilotControls), ui, options.projectId); return }
+        for (const record of records) await status(paths.store, vscodeCopilotAdapter(exe,
+          copilotRecoveryHome(paths.vscodeCopilotHome, recordHome(record)), copilotControls), ui, record.projectId)
+        return
+      } else {
+        requireValue(records.length, 'no_managed_connections')
+        const record = records.length === 1 ? records[0] : records[await ui.choose('Choose a connection to remove', records.map(row => row.projectId))]
+        options.projectId = record.projectId
+        copilotHome = copilotRecoveryHome(paths.vscodeCopilotHome, recordHome(record))
+      }
+    }
+    const adapter = client === 'vscode-copilot'
+      ? vscodeCopilotAdapter(await detectVSCode(options.executable), copilotHome, copilotControls)
+      : client === 'vscode'
       ? vscodeAdapter(await detectVSCode(options.executable), paths.vscodeHome)
       : client === 'claude'
       ? claudeAdapter(await detectClaude(options.executable), paths.claudeHome, process.env, options.claudeOnly)
@@ -104,7 +148,9 @@ export async function main(args = process.argv.slice(2)) {
     const label = adapterLabel(adapter)
     if (options.command === 'connect') requireValue(executable.foregroundMode !== 'unsupported', 'client_foreground_unsupported')
     ui.say(`${label} detected: ${executable.version}. Recovery metadata: ${display(paths.store.root)}`)
-    if (options.command === 'connect') ui.say(client === 'vscode'
+    if (options.command === 'connect') ui.say(client === 'vscode-copilot'
+      ? 'Copilot hosted read-only acceptance passed through the fixture-pinned test entry. Ordinary connect remains guarded; no Owner sign-in or issuance is authorized here.'
+      : client === 'vscode'
       ? 'Isolated VS Code Local window; native MCP activation is manual. Close the entire isolated instance for cleanup. Do not use Copilot or provider harnesses. No model account authentication is automated.'
       : `Foreground launch: ${executable.foregroundMode === 'no-daemon' ? '--no-daemon (supported by this executable; no shared background server)' : 'direct (no --no-daemon flag advertised; interactive startup is not preverified)'}.`)
     if (options.command === 'status') { await status(paths.store, adapter, ui, options.projectId); return }
@@ -130,6 +176,7 @@ export async function main(args = process.argv.slice(2)) {
   } catch (error) {
     process.exitCode = 1
     const code = stop.signal.aborted ? 'interrupted' : safeCode(error)
+    if (code === 'copilot_runtime_unverified') process.stdout.write('Copilot hosted read-only acceptance passed in the fixture-pinned test. Ordinary connect remains guarded. Launch, Owner authentication and issuance remain blocked here.\n')
     process.stdout.write(`TrackQA connector stopped: ${code}. No credentials are included in this diagnostic.\n`)
     if (code === 'cleanup_unconfirmed' || code === 'interrupted') process.stdout.write('Run status and disconnect to inspect nonsecret recovery metadata. An Owner can revoke access in Project Settings > AI Integrations > Manage Connections. Do not assume remote access was removed.\n')
     if (code === 'configuration_changed') process.stdout.write('The client entry changed after installation. It was preserved. Review only that server entry before removing it manually.\n')

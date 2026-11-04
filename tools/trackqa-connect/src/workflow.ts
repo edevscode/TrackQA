@@ -7,6 +7,8 @@ import { adapterClient, adapterHome, adapterLabel } from './clients/adapter.ts'
 import { fingerprint, matchesEntry } from './clients/codex.ts'
 import type { Store, RecordState } from './state.ts'
 import { recordHome } from './state.ts'
+import { consumeFixturePermit, COPILOT_FIXTURE } from './testing/copilot-fixture-scope.ts'
+import type { FixturePermit } from './testing/copilot-fixture-scope.ts'
 
 export type UI = {
   say: (message: string) => void
@@ -72,21 +74,36 @@ export async function cleanup(store: Store, adapter: Adapter, record: RecordStat
   else await store.remove(record.projectId, record.client)
   return { revoked: !needsRevocation || record.phase === 'revoked', removed: !record.installed && !unresolved.includes('local_removal_unconfirmed'), unresolved }
 }
-export async function connect({ owner, adapter, store, ui, projectId, signal }: {
+type ConnectOptions = {
   owner: Owner; adapter: Adapter; store: Store; ui: UI; projectId?: string; signal?: AbortSignal
-}) {
+}
+export async function connect(options: ConnectOptions) {
+  // Acceptance guard: stop even direct API callers before any Owner read,
+  // configuration write, project enablement or connection issuance.
+  requireValue(adapterClient(options.adapter) !== 'vscode-copilot', 'copilot_runtime_unverified')
+  return connectSession(options)
+}
+// No project/client flag or boolean guard bypass: this one-use identity-bound
+// permit is created only by the separate, fixed-fixture acceptance orchestrator.
+export async function connectCopilotFixture(options: Omit<ConnectOptions, 'projectId'> & { permit: FixturePermit }) {
+  requireValue(!('projectId' in options), 'fixture_identity_mismatch')
+  consumeFixturePermit(options.permit, options.owner, options.adapter, options.store)
+  return connectSession({ ...options, projectId: COPILOT_FIXTURE.id }, true)
+}
+async function connectSession({ owner, adapter, store, ui, projectId, signal }: ConnectOptions, fixture = false) {
   const project = await chooseProject(owner, ui, projectId)
+  if (fixture) requireValue(project.id === COPILOT_FIXTURE.id && project.name === COPILOT_FIXTURE.name && project.key === COPILOT_FIXTURE.key, 'fixture_identity_mismatch')
   const client = adapterClient(adapter)
   const setup = setupFor(project.id, client)
   const records = await store.read()
-  requireValue(!records.some(record => record.projectId === project.id && record.client === client), 'existing_connection_recover_first')
+  requireValue(!records.some(record => record.client === client && (client === 'vscode-copilot' || record.projectId === project.id)), 'existing_connection_recover_first')
   requireValue(await adapter.entry(setup) === null, 'configuration_conflict')
   ui.say(preview(setup, adapter))
   ui.say('The token will be available only to this foreground session. Other trusted processes on this OS account may inspect its environment. A normal future client launch will not inherit it.')
   if (!await ui.confirm('Install this token-free configuration?')) return
   requireValue(!signal?.aborted, 'interrupted')
   const record: RecordState = { projectId: project.id, userId: owner.userId, client, executable: adapter.executable.path,
-    ...(client === 'vscode' ? { vscodeHome: adapterHome(adapter) } : client === 'claude' ? { claudeHome: adapterHome(adapter) } : client === 'gemini' ? { geminiHome: adapterHome(adapter) } : { codexHome: adapterHome(adapter) }), clientLabel: `TrackQA Connect ${randomUUID()}`, connectionId: null,
+    ...(client === 'vscode-copilot' ? { vscodeCopilotHome: adapterHome(adapter) } : client === 'vscode' ? { vscodeHome: adapterHome(adapter) } : client === 'claude' ? { claudeHome: adapterHome(adapter) } : client === 'gemini' ? { geminiHome: adapterHome(adapter) } : { codexHome: adapterHome(adapter) }), clientLabel: `TrackQA Connect ${randomUUID()}`, connectionId: null,
     phase: 'planned', installed: false, configHash: null, lastVerifiedAt: null }
   await store.save(record)
   let token = ''
@@ -96,7 +113,7 @@ export async function connect({ owner, adapter, store, ui, projectId, signal }: 
     record.installed = true; record.phase = 'installed'; await store.save(record)
     let current = await ownerProject(owner, project.id)
     if (!current.mcp_enabled) {
-      ui.say('Enabling project access can also restore other eligible connections. This setting remains enabled after your session; only this session’s token will be revoked automatically.')
+      ui.say(fixture ? 'Acceptance only: MCP will be restored to its verified disabled baseline. No other project is authorized.' : 'Enabling project access can also restore other eligible connections. This setting remains enabled after your session; only this session’s token will be revoked automatically.')
       if (!await ui.confirm(`Enable MCP access for ${display(current.name)} only?`)) return
       requireValue(!signal?.aborted, 'interrupted')
       const result = await owner.api(`/rest/v1/projects?id=eq.${project.id}&select=id,mcp_enabled`, 'PATCH', { mcp_enabled: true })
@@ -125,13 +142,24 @@ export async function connect({ owner, adapter, store, ui, projectId, signal }: 
     } else requireValue(verification.verified, verification.code)
     if (verification.verified) { record.lastVerifiedAt = new Date().toISOString(); await store.save(record) }
     requireValue(!signal?.aborted, 'interrupted')
-    ui.say(`Launching ${adapterLabel(adapter)}. Exit normally to return here for token revocation and configuration cleanup.`)
+    ui.say(client === 'vscode-copilot'
+      ? `Launching ${adapterLabel(adapter)}. Keep the CLI open; type disconnect here to revoke access. Editor exit is not proof that Copilot sessions terminated.`
+      : `Launching ${adapterLabel(adapter)}. Exit normally to return here for token revocation and configuration cleanup.`)
     await adapter.launch(setup, token, signal)
   }
   try { await run() } catch (error) { failure = error }
   finally {
     token = ''
-    const result = await cleanup(store, adapter, record, owner)
+    let result
+    if (fixture) {
+      try {
+        await disconnect(store, adapter, ui, async action => action(owner), COPILOT_FIXTURE.id)
+        result = { revoked: true, removed: true, unresolved: [] as string[] }
+      } catch {
+        const pending = (await store.read()).find(row => row.client === 'vscode-copilot' && row.projectId === COPILOT_FIXTURE.id)
+        result = { revoked: pending?.phase === 'revoked', removed: pending?.installed === false, unresolved: ['acceptance_disconnect_unconfirmed'] }
+      }
+    } else result = await cleanup(store, adapter, record, owner)
     ui.say(`Session cleanup: local configuration ${result.removed ? 'removed' : 'UNCONFIRMED'}; remote revocation ${result.revoked ? 'confirmed or not needed' : 'UNCONFIRMED'}.`)
     if (result.unresolved.length) {
       if (client === 'gemini') ui.say('Preserve settings.json and any .trackqa-settings-recovery-*.bak in the Gemini home. Compare/merge before recovery; never restore over an unexpected external edit or retry an uncertain write automatically.')

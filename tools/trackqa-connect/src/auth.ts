@@ -4,6 +4,8 @@ import { parseEnv } from 'node:util'
 import { googlePkceSignIn, GooglePkceError } from '../../mcp-pilot/google-pkce.mjs'
 import { boundedJson, ConnectorError, requireValue, SUPABASE_URL, UUID } from './core.ts'
 import type { Api, Project } from './core.ts'
+import { fixtureMembershipRoute, fixtureRequestAllowed, fixtureScopeState, observeFixtureResponse } from './testing/copilot-fixture-scope.ts'
+import type { FixtureScope } from './testing/copilot-fixture-scope.ts'
 
 export function isPublicKey(key: string) {
   if (/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) return true
@@ -29,6 +31,7 @@ export async function publicKey(env: NodeJS.ProcessEnv = process.env) {
 type AuthOptions = {
   key: string; signal?: AbortSignal; fetch?: typeof fetch
   signIn?: typeof googlePkceSignIn; makeClient?: typeof createClient
+  fixtureScope?: FixtureScope
 }
 export type Owner = { userId: string; api: Api; projects: Project[] }
 
@@ -36,6 +39,7 @@ export type Owner = { userId: string; api: Api; projects: Project[] }
 // client never reach the client adapter or the recovery store.
 export async function withOwner<T>(options: AuthOptions, action: (owner: Owner) => Promise<T>): Promise<T> {
   requireValue(isPublicKey(options.key), 'public_key_required')
+  if (options.fixtureScope) fixtureScopeState(options.fixtureScope)
   const posts = new Set<string>()
   const send = options.fetch ?? fetch
   const authFetch: typeof fetch = async (input, init = {}) => {
@@ -84,17 +88,19 @@ export async function withOwner<T>(options: AuthOptions, action: (owner: Owner) 
       const url = new URL(route, SUPABASE_URL)
       requireValue(url.origin === SUPABASE_URL && !url.username && !url.password && route.startsWith('/rest/v1/'), 'request_failed')
       const resource = url.pathname.slice('/rest/v1/'.length)
-      requireValue(method === 'GET' ? ['profiles', 'projects', 'project_members', 'mcp_connections'].includes(resource)
+      requireValue(options.fixtureScope ? fixtureRequestAllowed(options.fixtureScope, user.id, route, method, body) : method === 'GET' ? ['profiles', 'projects', 'project_members', 'mcp_connections'].includes(resource)
         : method === 'PATCH' ? resource === 'projects' && !!url.searchParams.get('id') && JSON.stringify(body) === '{"mcp_enabled":true}'
           : ['rpc/issue_mcp_connection_token', 'rpc/revoke_mcp_connection'].includes(resource), 'request_failed')
       try {
-        return await boundedJson(await send(url.href, { method, headers: { apikey: options.key, Authorization: `Bearer ${access}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        const result = await boundedJson(await send(url.href, { method, headers: { apikey: options.key, Authorization: `Bearer ${access}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
           body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(10_000), redirect: 'error', cache: 'no-store', credentials: 'omit' }))
+        if (options.fixtureScope) observeFixtureResponse(options.fixtureScope, user.id, route, result)
+        return result
       } catch { throw new ConnectorError('request_failed') }
     }
     const profile = await api(`/rest/v1/profiles?id=eq.${user.id}&select=id&limit=2`)
     requireValue(Array.isArray(profile) && profile.length === 1 && profile[0].id === user.id, 'profile_required')
-    const memberships = await api(`/rest/v1/project_members?user_id=eq.${user.id}&role=eq.OWNER&select=project_id,role,project:projects(id,name,key,mcp_enabled,archived)&limit=201`)
+    const memberships = await api(options.fixtureScope ? fixtureMembershipRoute(user.id) : `/rest/v1/project_members?user_id=eq.${user.id}&role=eq.OWNER&select=project_id,role,project:projects(id,name,key,mcp_enabled,archived)&limit=201`)
     requireValue(Array.isArray(memberships) && memberships.length <= 200, 'project_selection_unavailable')
     const projects = memberships.filter(row => row.role === 'OWNER' && UUID.test(row.project_id) && row.project?.id === row.project_id
       && row.project.archived === false && typeof row.project.mcp_enabled === 'boolean' && typeof row.project.name === 'string' && typeof row.project.key === 'string')

@@ -5,18 +5,18 @@ import { requireValue, UUID, setupFor } from './core.ts'
 import type { Client } from './core.ts'
 
 export type RecordState = {
-  projectId: string; userId: string; client: Client; executable: string; codexHome?: string; geminiHome?: string; claudeHome?: string; vscodeHome?: string
+  projectId: string; userId: string; client: Client; executable: string; codexHome?: string; geminiHome?: string; claudeHome?: string; vscodeHome?: string; vscodeCopilotHome?: string
   clientLabel: string; connectionId: string | null
   phase: 'planned' | 'installed' | 'issuing' | 'active' | 'revocation_pending' | 'revoked'
   installed: boolean; lastVerifiedAt: string | null
   configHash: string | null
 }
 const fields = ['projectId', 'userId', 'client', 'executable', 'clientLabel', 'connectionId', 'phase', 'installed', 'lastVerifiedAt', 'configHash']
-export const recordHome = (record: RecordState) => record.client === 'vscode' ? record.vscodeHome! : record.client === 'claude' ? record.claudeHome! : record.client === 'gemini' ? record.geminiHome! : record.codexHome!
+export const recordHome = (record: RecordState) => record.client === 'vscode-copilot' ? record.vscodeCopilotHome! : record.client === 'vscode' ? record.vscodeHome! : record.client === 'claude' ? record.claudeHome! : record.client === 'gemini' ? record.geminiHome! : record.codexHome!
 export function validateRecord(record: RecordState) {
-  const homeKey = record?.client === 'vscode' ? 'vscodeHome' : record?.client === 'claude' ? 'claudeHome' : record?.client === 'gemini' ? 'geminiHome' : 'codexHome'
+  const homeKey = record?.client === 'vscode-copilot' ? 'vscodeCopilotHome' : record?.client === 'vscode' ? 'vscodeHome' : record?.client === 'claude' ? 'claudeHome' : record?.client === 'gemini' ? 'geminiHome' : 'codexHome'
   requireValue(record && Object.keys(record).length === fields.length + 1 && Object.keys(record).every(key => fields.includes(key) || key === homeKey)
-    && ['codex', 'gemini', 'claude', 'vscode'].includes(record.client) && UUID.test(record.projectId) && UUID.test(record.userId)
+    && ['codex', 'gemini', 'claude', 'vscode', 'vscode-copilot'].includes(record.client) && UUID.test(record.projectId) && UUID.test(record.userId)
     && (record.connectionId === null || UUID.test(record.connectionId))
     && /^TrackQA Connect [0-9a-f-]{36}$/.test(record.clientLabel)
     && ['planned', 'installed', 'issuing', 'active', 'revocation_pending', 'revoked'].includes(record.phase)

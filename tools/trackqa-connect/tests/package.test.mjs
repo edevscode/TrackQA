@@ -1,0 +1,67 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { packageRoot, runtimeClosure } from '../scripts/build.mjs'
+
+const manifest=JSON.parse(await readFile(path.join(packageRoot,'package.json'),'utf8'))
+const output=path.join(packageRoot,'dist'),entry=path.join(packageRoot,manifest.bin.trackqa)
+async function temporary(t){
+  const root=await mkdtemp(path.join(os.tmpdir(),'trackqa-package-test-'))
+  t.after(async()=>{
+    assert.equal(path.dirname(root),path.resolve(os.tmpdir()))
+    assert.match(path.basename(root),/^trackqa-package-test-[A-Za-z0-9]{6}$/)
+    await rm(root,{recursive:true,force:true})
+  })
+  return root
+}
+
+test('publishable trackqa candidate preserves its identity and executable without the private flag',()=>{
+  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.0');assert.equal(Object.hasOwn(manifest,'private'),false)
+  assert.deepEqual(manifest.bin,{trackqa:'dist/tools/trackqa-connect/src/cli.js'})
+  assert.deepEqual(manifest.dependencies,{'@supabase/supabase-js':'2.113.0'})
+  assert.equal(manifest.engines.node,'>=22.19.0')
+  assert.equal(Object.keys(manifest.scripts).some(s=>['install','postinstall','preinstall','prepare'].includes(s)),false)
+})
+
+test('distribution allowlist exactly matches the compiled runtime closure and existing shared helpers',async()=>{
+  const files=runtimeClosure(output,entry,manifest.dependencies).map(f=>path.relative(packageRoot,f).split(path.sep).join('/')).sort()
+  assert.deepEqual(files,manifest.files.filter(f=>f.startsWith('dist/')).sort())
+  assert.ok(files.includes('dist/tools/mcp-pilot/google-pkce.mjs'))
+  assert.ok(files.includes('dist/src/lib/mcpOnboarding.js'))
+  assert.ok(files.includes('dist/tools/trackqa-connect/src/testing/copilot-fixture-scope.js'),'Existing runtime capability guard must remain intact')
+  for(const f of files)assert.doesNotMatch(f,/copilot-(?:hosted|synthetic|windows|process)|\.test\.|\/tests\/|\.env/)
+  const actual=[]
+  async function walk(p){for(const d of await readdir(p,{withFileTypes:true})){const f=path.join(p,d.name);assert.equal(d.isSymbolicLink(),false);if(d.isDirectory())await walk(f);else actual.push(path.relative(packageRoot,f).split(path.sep).join('/'))}}
+  await walk(output);assert.deepEqual(actual.sort(),files)
+  assert.match(await readFile(entry,'utf8'),/^#!\/usr\/bin\/env node\r?\n/)
+})
+
+test('built executable works outside the checkout without credentials and rejects token arguments before authentication',async t=>{
+  const cwd=await temporary(t),env={SystemRoot:process.env.SystemRoot,WINDIR:process.env.WINDIR,HOME:cwd,USERPROFILE:cwd,LOCALAPPDATA:cwd}
+  const help=spawnSync(process.execPath,[entry,'--help'],{cwd,env,encoding:'utf8'})
+  assert.equal(help.status,0);assert.match(help.stdout,/MVP-supported candidate/);assert.match(help.stdout,/ordinary connect remains guarded/)
+  assert.doesNotMatch(help.stderr,/ERR_MODULE_NOT_FOUND/)
+  const invalid=spawnSync(process.execPath,[entry,'connect','--token','synthetic-not-a-credential'],{cwd,env,encoding:'utf8'})
+  assert.equal(invalid.status,1);assert.match(invalid.stdout,/stopped: usage/)
+  assert.equal(invalid.stdout.includes('synthetic-not-a-credential'),false)
+  assert.deepEqual(await readdir(cwd),[],'Help and validation must not create auth or recovery state')
+})
+
+test('compiled normal and direct workflow paths preserve the Copilot production guard',async()=>{
+  const {connect,connectCopilotFixture}=await import(pathToFileURL(path.join(output,'tools/trackqa-connect/src/workflow.js')))
+  const forbidden=new Proxy({},{get(){assert.fail('No authentication, project access or launch is permitted')}})
+  await assert.rejects(connect({adapter:{client:'vscode-copilot'},owner:forbidden,store:forbidden,ui:forbidden}),e=>e.code==='copilot_runtime_unverified')
+  await assert.rejects(connectCopilotFixture({permit:{},adapter:{client:'vscode-copilot'},owner:forbidden,store:forbidden,ui:forbidden}),e=>e.code==='fixture_capability_invalid')
+})
+
+test('runtime closure refuses undeclared dependencies and imports outside the packaged tree without executing them',async t=>{
+  const root=await temporary(t),file=path.join(root,'entry.js')
+  await writeFile(file,"import 'undeclared-package';\nthrow new Error('must not execute');\n")
+  assert.throws(()=>runtimeClosure(root,file,manifest.dependencies),/Undeclared runtime dependency/)
+  await writeFile(file,"import '../outside.js';\n")
+  assert.throws(()=>runtimeClosure(root,file,manifest.dependencies),/escapes the compiled output/)
+})
