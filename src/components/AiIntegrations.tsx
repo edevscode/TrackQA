@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { Terminal, Copy, Check } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import { supabase } from '../lib/supabase'
-import { clientConfigSnippet, connectionFields, connectionStatus, mcpSetup } from '../lib/mcpOnboarding'
-import type { McpClientType } from '../lib/mcpOnboarding'
+import { connectionFields, connectionStatus } from '../lib/mcpOnboarding'
 import { isActiveConnection, verifyConnectionRevoked } from '../lib/mcpConnections'
 import type { McpConnection, Project, ProjectRole } from '../lib/database.types'
 import type { ProjectSettingsMember } from '../lib/cache'
-import { useDialogFocus } from '../hooks/useDialogFocus'
 
 type Operation = { type: 'enable'; enabled: boolean } | { type: 'revoke'; connection: McpConnection }
 const pageSize = 10
+const SETUP_COMMAND = 'npx trackqa setup'
 
 export default function AiIntegrations({ project, userId, role, members, managementOnly = false }: {
   project: Project; userId: string; role: ProjectRole | null; members: ProjectSettingsMember[]; managementOnly?: boolean
@@ -29,29 +28,13 @@ export default function AiIntegrations({ project, userId, role, members, managem
   const [pendingRevocation, setPendingRevocation] = useState<string | null>(null)
   const [operation, setOperation] = useState<Operation | null>(null)
   const [busy, setBusy] = useState(false)
-  const [clientTab, setClientTab] = useState<McpClientType>('generic')
-  const [copyState, setCopyState] = useState<Record<string, 'copied' | 'failed'>>({})
+  const [copied, setCopied] = useState(false)
   const [now, setNow] = useState(Date.now)
-
-  // Generate connection modal states
-  const [showGenerateModal, setShowGenerateModal] = useState(false)
-  const [generateUserId, setGenerateUserId] = useState(userId)
-  const [generateLabel, setGenerateLabel] = useState('AI Client')
-  const [generating, setGenerating] = useState(false)
-  const [generateError, setGenerateError] = useState<string | null>(null)
-  const [generatedToken, setGeneratedToken] = useState<string | null>(null)
 
   const active = useRef(true)
   const mutating = useRef(false)
   const sequence = useRef(0)
   const cancellation = useRef<AbortController | null>(null)
-
-  let setup: ReturnType<typeof mcpSetup> | null = null
-  try {
-    setup = mcpSetup(import.meta.env.VITE_SUPABASE_URL, project.id)
-  } catch {
-    // Fail closed without exposing configuration values.
-  }
 
   const load = useCallback(async () => {
     const version = ++sequence.current
@@ -98,37 +81,38 @@ export default function AiIntegrations({ project, userId, role, members, managem
   async function checkRevocation(connectionId: string) {
     const confirmed = await verifyConnectionRevoked(() => supabase.from('mcp_connections')
       .select('id,project_id,revoked_at').eq('project_id', project.id).eq('id', connectionId).maybeSingle(), project.id, connectionId)
-    if (active.current) {
-      setPendingRevocation(confirmed ? null : connectionId)
-      setNotice(confirmed ? 'Connection revoked.' : 'Revocation not yet verified.')
+    if (!active.current) return
+    if (confirmed) {
+      setPendingRevocation(null)
+      setNotice('Connection revoked.')
+    } else {
+      setPendingRevocation(connectionId)
+      setError('Revocation could not be verified yet. Recheck in a moment.')
     }
   }
 
   async function recheckRevocation() {
-    if (!isOwner || !pendingRevocation || mutating.current) return
-    mutating.current = true
+    if (!pendingRevocation || busy) return
     setBusy(true)
-    setError(null)
+    mutating.current = true
     try { await checkRevocation(pendingRevocation); if (active.current) await load() }
     finally { mutating.current = false; if (active.current) setBusy(false) }
   }
 
   async function perform(next: Operation) {
-    if (!isOwner || mutating.current || !loaded || (managementOnly && next.type !== 'revoke')) return
-    mutating.current = true
+    if (busy) return
     setBusy(true)
+    mutating.current = true
     setError(null)
     setNotice(null)
     try {
       if (next.type === 'enable') {
-        if (access.archived) throw new Error('Unavailable')
-        const result = await supabase.from('projects').update({ mcp_enabled: next.enabled }).eq('id', project.id).select('id,mcp_enabled').maybeSingle()
-        if (result.error || result.data?.id !== project.id || result.data.mcp_enabled !== next.enabled) throw new Error('Unavailable')
+        const { error: updateError } = await supabase.from('projects').update({ mcp_enabled: next.enabled }).eq('id', project.id)
+        if (updateError) throw updateError
+        if (active.current) setAccess(prev => ({ ...prev, enabled: next.enabled }))
       } else {
-        if (next.connection.project_id !== project.id) throw new Error('Unavailable')
-        setPendingRevocation(next.connection.id)
-        const result = await supabase.rpc('revoke_mcp_connection', { p_connection_id: next.connection.id })
-        if (result.error) throw new Error('Unavailable')
+        const { error: rpcError } = await supabase.rpc('revoke_mcp_connection', { p_project_id: project.id, p_connection_id: next.connection.id })
+        if (rpcError) throw rpcError
         await checkRevocation(next.connection.id)
       }
       if (active.current) await load()
@@ -140,50 +124,15 @@ export default function AiIntegrations({ project, userId, role, members, managem
     }
   }
 
-  async function copyText(text: string, key: string) {
+  async function copyCommand() {
     try {
-      await navigator.clipboard.writeText(text)
-      setCopyState(prev => ({ ...prev, [key]: 'copied' }))
+      await navigator.clipboard.writeText(SETUP_COMMAND)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     } catch {
-      setCopyState(prev => ({ ...prev, [key]: 'failed' }))
+      // Fail closed
     }
   }
-
-  async function handleGenerateSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    if (!isOwner || generating || !generateLabel.trim() || !access.enabled || access.archived) return
-    setGenerating(true)
-    setGenerateError(null)
-    try {
-      const result = await supabase.rpc('issue_mcp_connection_token', {
-        p_project_id: project.id,
-        p_user_id: generateUserId,
-        p_client_label: generateLabel.trim(),
-      })
-      if (result.error || !result.data || !Array.isArray(result.data) || result.data.length !== 1 || !result.data[0].access_token) {
-        throw new Error('Unavailable')
-      }
-      setGeneratedToken(result.data[0].access_token)
-      setGenerateLabel('AI Client')
-      if (active.current) await load()
-    } catch {
-      if (active.current) {
-        setGenerateError('Could not generate connection token. Try again.')
-      }
-    } finally {
-      if (active.current) setGenerating(false)
-    }
-  }
-
-  function closeGenerateModal() {
-    if (!generating) {
-      setGeneratedToken(null)
-      setShowGenerateModal(false)
-      setGenerateError(null)
-    }
-  }
-
-  const generateModalRef = useDialogFocus(showGenerateModal, closeGenerateModal)
 
   function refresh() { setLoading(true); void load() }
   function selectPage(next: number) { setPage(next); setLoading(true) }
@@ -192,8 +141,11 @@ export default function AiIntegrations({ project, userId, role, members, managem
   return <section className="space-y-md rounded-xl border border-outline-variant p-md sm:p-lg" aria-labelledby={titleId}>
     <div>
       <h2 id={titleId} className="text-headline-md font-semibold text-on-surface">{managementOnly ? project.name + ' · Connections' : 'AI Integrations'}</h2>
-      <p className="mt-xs text-body-sm text-on-surface-variant">{managementOnly ? 'Manage access for this archived project.' : 'Connect your AI client directly to this project via standard MCP over HTTPS.'}</p>
+      <p className="mt-xs text-body-sm text-on-surface-variant">
+        {managementOnly ? 'Manage access for this archived project.' : 'Connect AI coding assistants (Google Antigravity, VS Code, Windsurf, Claude Code, Codex) automatically.'}
+      </p>
     </div>
+
     {!managementOnly && <>
       <div className="flex items-center justify-between gap-md">
         <div className="text-body-md text-on-surface">Project MCP access <span className="ml-xs text-body-sm text-on-surface-variant">{loading ? 'Checking…' : !loaded ? 'Unavailable' : access.enabled ? 'Enabled' : 'Disabled'}</span></div>
@@ -204,220 +156,123 @@ export default function AiIntegrations({ project, userId, role, members, managem
         </label>
       </div>
 
-      {!access.archived && access.enabled && setup && <div className="space-y-sm rounded-lg border border-outline-variant bg-surface-container-low p-md">
-        <div className="flex flex-col gap-xs sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-label-md font-semibold text-on-surface">MCP Endpoint</span>
-          <button type="button" onClick={() => void copyText(setup.endpoint, 'endpoint')} aria-label="Copy MCP endpoint" className="shrink-0 rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary hover:bg-surface-container-lowest">
-            {copyState['endpoint'] === 'copied' ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        <code className="block min-w-0 break-all rounded bg-surface-container-lowest p-sm text-code-sm text-on-surface font-mono">
-          {setup.endpoint}
-        </code>
-        <div className="border-t border-outline-variant/60 pt-sm">
-          <div className="flex flex-wrap items-center justify-between gap-xs">
-            <span className="text-label-sm font-semibold text-on-surface">Client configuration</span>
-            <div className="flex flex-wrap gap-xs">
-              {([
-                { key: 'generic', label: 'Generic' },
-                { key: 'claude', label: 'Claude Code' },
-                { key: 'codex', label: 'Codex' },
-                { key: 'vscode', label: 'VS Code' },
-              ] as const).map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setClientTab(key)}
-                  className={`rounded px-xs py-0.5 text-label-xs font-semibold transition-colors ${clientTab === key ? 'bg-primary text-on-primary' : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+      {!access.archived && access.enabled && (
+        <div className="space-y-md rounded-xl border border-outline-variant bg-surface-container-low p-md sm:p-lg">
+          <div className="flex items-center gap-2">
+            <Terminal className="h-5 w-5 text-primary" />
+            <h3 className="text-title-md font-semibold text-on-surface">Connect AI Agent</h3>
           </div>
-          <div className="relative mt-xs">
-            <pre className="max-h-48 overflow-x-auto rounded bg-surface-container-lowest p-sm text-code-xs font-mono text-on-surface">
-              {clientConfigSnippet(setup, clientTab)}
-            </pre>
+
+          <p className="text-body-sm text-on-surface-variant">
+            Run the setup command in your workspace. Your browser will open to confirm project authorization, and your installed AI assistants will be configured automatically.
+          </p>
+
+          <div className="flex items-center justify-between gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-sm sm:p-md">
+            <code className="min-w-0 font-mono text-body-md font-semibold text-on-surface selection:bg-primary/20">
+              {SETUP_COMMAND}
+            </code>
             <button
               type="button"
-              onClick={() => void copyText(clientConfigSnippet(setup, clientTab), 'config')}
-              aria-label="Copy configuration"
-              className="absolute right-2 top-2 rounded border border-outline-variant bg-surface-container-lowest px-xs py-0.5 text-label-xs font-semibold text-primary hover:bg-surface-container-low"
+              onClick={() => void copyCommand()}
+              aria-label="Copy setup command"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-sm py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors"
             >
-              {copyState['config'] === 'copied' ? 'Copied' : 'Copy'}
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-        </div>
-      </div>}
 
-      {!access.archived && access.enabled && isOwner && <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => { setGenerateError(null); setGeneratedToken(null); setShowGenerateModal(true) }}
-          disabled={busy || loading || !loaded || access.archived}
-          className="rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container disabled:opacity-50"
-        >
-          Generate connection
-        </button>
-      </div>}
+          <div className="grid gap-2 border-t border-outline-variant/60 pt-sm text-body-xs text-on-surface-variant sm:grid-cols-3">
+            <div className="flex items-start gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-container-highest text-[11px] font-bold text-on-surface">1</span>
+              <span>Run <code className="font-mono text-on-surface">npx trackqa setup</code> in terminal</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-container-highest text-[11px] font-bold text-on-surface">2</span>
+              <span>Authorize project in your browser</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-container-highest text-[11px] font-bold text-on-surface">3</span>
+              <span>AI assistants are configured automatically</span>
+            </div>
+          </div>
+        </div>
+      )}
     </>}
 
     <div className="border-t border-outline-variant pt-md">
-      <h3 className="text-body-md font-semibold text-on-surface">Connections</h3>
-      {loading ? <p role="status" className="mt-sm text-body-sm text-on-surface-variant">Loading connections…</p>
-        : loadError ? <div className="mt-sm"><p role="alert" className="text-body-sm text-error">{loadError}</p><button type="button" onClick={refresh} disabled={busy} className="mt-xs text-label-md font-semibold text-primary disabled:opacity-50">Retry</button></div>
-          : visibleConnections.length === 0 ? <p className="mt-sm text-body-sm text-on-surface-variant">No active connections.</p>
-            : <ul className="mt-sm divide-y divide-outline-variant">{visibleConnections.map(connection => <li key={connection.id} className="flex items-center justify-between gap-sm py-sm">
+      <div className="flex items-center justify-between">
+        <h3 className="text-body-md font-semibold text-on-surface">Active Connections</h3>
+        <span className="text-body-xs text-on-surface-variant">
+          {visibleConnections.length} connected
+        </span>
+      </div>
+
+      {loading ? (
+        <p role="status" className="mt-sm text-body-sm text-on-surface-variant">Loading connections…</p>
+      ) : loadError ? (
+        <div className="mt-sm">
+          <p role="alert" className="text-body-sm text-error">{loadError}</p>
+          <button type="button" onClick={refresh} disabled={busy} className="mt-xs text-label-md font-semibold text-primary disabled:opacity-50">Retry</button>
+        </div>
+      ) : visibleConnections.length === 0 ? (
+        <p className="mt-sm text-body-sm text-on-surface-variant">No active connections.</p>
+      ) : (
+        <ul className="mt-sm divide-y divide-outline-variant">
+          {visibleConnections.map(connection => (
+            <li key={connection.id} className="flex items-center justify-between gap-sm py-sm">
               <div className="min-w-0">
-                <p className="break-words text-body-md font-semibold text-on-surface">{connection.client_label}</p>
-                <p className="text-body-sm text-on-surface-variant">{pendingRevocation === connection.id ? 'Revocation unverified' : connectionStatus(connection, access.enabled, access.archived, managementOnly || members.some(member => member.user_id === connection.user_id), now)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="break-words text-body-md font-semibold text-on-surface">{connection.client_label}</p>
+                  <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-label-xs font-medium text-emerald-600">
+                    Active
+                  </span>
+                </div>
+                <p className="text-body-xs text-on-surface-variant">
+                  {pendingRevocation === connection.id ? 'Revocation unverified' : connectionStatus(connection, access.enabled, access.archived, managementOnly || members.some(member => member.user_id === connection.user_id), now)}
+                  {' · '}
+                  Created {new Date(connection.created_at).toLocaleDateString()}
+                </p>
               </div>
-              {isOwner && <button type="button" disabled={busy} onClick={() => setOperation({ type: 'revoke', connection })} className="shrink-0 rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-error hover:bg-error-container disabled:opacity-50">Revoke</button>}
-            </li>)}</ul>}
-      {(page > 0 || hasMore) && <div className="mt-sm flex justify-end gap-sm text-body-sm text-on-surface-variant"><button type="button" disabled={page === 0 || loading || busy} onClick={() => selectPage(page - 1)} className="disabled:opacity-40">Previous</button><button type="button" disabled={!hasMore || loading || busy} onClick={() => selectPage(page + 1)} className="disabled:opacity-40">Next</button></div>}
+              {isOwner && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setOperation({ type: 'revoke', connection })}
+                  className="shrink-0 rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-error hover:bg-error-container disabled:opacity-50 transition-colors"
+                >
+                  Revoke
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {(page > 0 || hasMore) && (
+        <div className="mt-sm flex justify-end gap-sm text-body-sm text-on-surface-variant">
+          <button type="button" disabled={page === 0 || loading || busy} onClick={() => selectPage(page - 1)} className="disabled:opacity-40">Previous</button>
+          <button type="button" disabled={!hasMore || loading || busy} onClick={() => selectPage(page + 1)} className="disabled:opacity-40">Next</button>
+        </div>
+      )}
     </div>
 
     {error && <p role="alert" className="text-body-sm text-error">{error}</p>}
     {notice && <p role="status" className="text-body-sm text-on-surface-variant">{notice}</p>}
-    {pendingRevocation && isOwner && <button type="button" onClick={() => void recheckRevocation()} disabled={busy || loading} className="rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary disabled:opacity-50">Check revocation</button>}
-
-    <ConfirmModal open={!!operation} onClose={() => { if (!busy) setOperation(null) }} onConfirm={() => { if (operation) void perform(operation) }} isLoading={busy}
-      title={operation?.type === 'revoke' ? 'Revoke this connection?' : operation?.enabled ? 'Enable project access?' : 'Disable project access?'}
-      description={operation?.type === 'revoke' ? 'Revoke access for “' + operation.connection.client_label + '”?' : operation?.enabled ? 'Enable MCP access for this project? Existing eligible connections may resume.' : 'Block MCP access for this project?'}
-      confirmLabel={operation?.type === 'revoke' ? 'Revoke connection' : operation?.enabled ? 'Enable project access' : 'Disable project access'}
-      variant={operation?.type === 'revoke' ? 'danger' : 'primary'} />
-
-    {showGenerateModal && (
-      <div
-        role="dialog"
-        ref={generateModalRef}
-        tabIndex={-1}
-        aria-modal="true"
-        aria-labelledby="generate-modal-title"
-        className="fixed inset-0 z-50 flex items-center justify-center p-md"
-      >
-        <div
-          onClick={closeGenerateModal}
-          className="fixed inset-0 bg-black/30 backdrop-blur-[1px]"
-        />
-        <div className="relative z-10 w-full max-w-[480px] rounded-lg border border-outline-variant bg-surface-container-lowest p-lg shadow-lg">
-          <div className="flex items-start justify-between gap-sm">
-            <h2 id="generate-modal-title" className="text-headline-md font-semibold text-on-surface">
-              {generatedToken ? 'Connection Token' : 'Generate Connection'}
-            </h2>
-            <button
-              type="button"
-              disabled={generating}
-              onClick={closeGenerateModal}
-              aria-label="Close dialog"
-              className="rounded p-xs text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface disabled:opacity-50"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {generatedToken ? (
-            <div className="mt-md space-y-md">
-              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-sm text-body-sm text-on-surface">
-                <span className="font-semibold text-amber-600 dark:text-amber-400">Secret · Shown once only:</span>{' '}
-                This bearer token grants project-scoped MCP access. Store it securely. It will not be shown again.
-              </div>
-              <div className="space-y-xs">
-                <label className="text-label-sm font-semibold text-on-surface">Bearer Token</label>
-                <div className="flex items-center gap-sm">
-                  <input
-                    type="text"
-                    readOnly
-                    value={generatedToken}
-                    aria-label="Generated MCP access token"
-                    className="w-full rounded-md border border-outline-variant bg-surface-container-low p-sm font-mono text-code-xs text-on-surface"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void copyText(generatedToken, 'token')}
-                    className="shrink-0 rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary"
-                  >
-                    {copyState['token'] === 'copied' ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              </div>
-              {setup && (
-                <p className="text-body-xs text-on-surface-variant">
-                  Environment variable:{' '}
-                  <code className="font-mono">{setup.envVar}</code>
-                </p>
-              )}
-              <div className="flex justify-end pt-sm">
-                <button
-                  type="button"
-                  onClick={closeGenerateModal}
-                  className="rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleGenerateSubmit} className="mt-md space-y-md">
-              {generateError && (
-                <p role="alert" className="text-body-sm text-error">{generateError}</p>
-              )}
-              <div className="space-y-xs">
-                <label htmlFor="mcp-member" className="block text-label-sm font-semibold text-on-surface">
-                  Connection member
-                </label>
-                <select
-                  id="mcp-member"
-                  value={generateUserId}
-                  onChange={e => setGenerateUserId(e.target.value)}
-                  disabled={generating}
-                  className="w-full rounded-md border border-outline-variant bg-surface-container-lowest p-sm text-body-md text-on-surface"
-                >
-                  {members.map(member => (
-                    <option key={member.user_id} value={member.user_id}>
-                      {member.full_name || member.email}{member.user_id === userId ? ' (you)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-xs">
-                <label htmlFor="mcp-label" className="block text-label-sm font-semibold text-on-surface">
-                  Device / Client label
-                </label>
-                <input
-                  id="mcp-label"
-                  type="text"
-                  required
-                  maxLength={120}
-                  value={generateLabel}
-                  onChange={e => setGenerateLabel(e.target.value)}
-                  placeholder="e.g. Laptop - Claude Code"
-                  disabled={generating}
-                  className="w-full rounded-md border border-outline-variant bg-surface-container-lowest p-sm text-body-md text-on-surface"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-sm pt-sm">
-                <button
-                  type="button"
-                  disabled={generating}
-                  onClick={closeGenerateModal}
-                  className="rounded-md px-sm py-xs text-label-md font-semibold text-on-surface-variant hover:bg-surface-container-low"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={generating || !generateLabel.trim()}
-                  className="rounded-md bg-primary px-md py-xs text-label-md font-semibold text-on-primary hover:bg-primary-container disabled:opacity-50"
-                >
-                  {generating ? 'Generating…' : 'Generate token'}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </div>
+    {pendingRevocation && isOwner && (
+      <button type="button" onClick={() => void recheckRevocation()} disabled={busy || loading} className="rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary disabled:opacity-50">
+        Check revocation
+      </button>
     )}
+
+    <ConfirmModal
+      open={!!operation}
+      onClose={() => { if (!busy) setOperation(null) }}
+      onConfirm={() => { if (operation) void perform(operation) }}
+      isLoading={busy}
+      title={operation?.type === 'revoke' ? 'Revoke this connection?' : operation?.enabled ? 'Enable project access?' : 'Disable project access?'}
+      description={operation?.type === 'revoke' ? 'Revoke access for “' + operation.connection.client_label + '”? The AI client will immediately lose access.' : operation?.enabled ? 'Enable MCP access for this project? Existing eligible connections may resume.' : 'Block MCP access for this project?'}
+      confirmLabel={operation?.type === 'revoke' ? 'Revoke connection' : operation?.enabled ? 'Enable project access' : 'Disable project access'}
+      variant={operation?.type === 'revoke' ? 'danger' : 'primary'}
+    />
   </section>
 }

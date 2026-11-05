@@ -1,7 +1,7 @@
 import { Eye, EyeOff, Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import AuthShowcasePanel from '../components/AuthShowcasePanel'
 import GoogleIcon from '../components/GoogleIcon'
 import TrackQALogo from '../components/TrackQALogo'
@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 
 function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { signIn, signInWithGoogle } = useAuth()
 
   const [showPassword, setShowPassword] = useState(false)
@@ -51,7 +52,8 @@ function Login() {
       localStorage.removeItem('trackqa_remember_me')
     }
 
-    navigate('/dashboard')
+    const redirect = searchParams.get('redirect') || '/dashboard'
+    navigate(redirect)
   }
 
   const handleGoogleSignIn = async () => {

@@ -1,0 +1,24 @@
+{
+  "name": "trackqa",
+  "version": "0.2.0",
+  "description": "TrackQA AI Agent Auto-Setup CLI",
+  "type": "module",
+  "bin": {
+    "trackqa": "./bin/trackqa.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "setup": "node ./bin/trackqa.js setup",
+    "test": "node --test tests/*.test.js"
+  },
+  "author": "TrackQA",
+  "license": "UNLICENSED"
+}
+

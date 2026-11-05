@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "node --experimental-strip-types --experimental-test-isolation=none --test tests/*.test.mjs",
+    "test:cli": "node --test cli/tests/*.test.js",
+    "setup": "node ./cli/bin/trackqa.js setup",
     "preview": "vite preview"
   },
   "dependencies": {

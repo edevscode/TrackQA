@@ -21,6 +21,7 @@ import Notifications from './pages/Notifications'
 import ProjectSettings from './pages/ProjectSettings'
 import AccountSettings from './pages/AccountSettings'
 import ArchivedProjects from './pages/ArchivedProjects'
+import AuthorizeAgent from './pages/AuthorizeAgent'
 import Support from './pages/Support'
 import Landing from './pages/Landing'
 import NotFound from './pages/NotFound'
@@ -50,6 +51,7 @@ function App() {
         <Route path="/projects/join" element={<JoinProject />} />
         <Route path="/projects/archived" element={<ArchivedProjects />} />
         <Route path="/account-settings" element={<AccountSettings />} />
+        <Route path="/authorize-agent" element={<AuthorizeAgent />} />
 
         <Route element={<RequireProject />}>
           <Route path="/dashboard" element={<Dashboard />} />

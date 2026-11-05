@@ -33,6 +33,7 @@ supabase/.temp/
 *.sw?
 
 # Agent & AI tool configs
+.mcp.json
 .agent/
 .agents/
 .claude/

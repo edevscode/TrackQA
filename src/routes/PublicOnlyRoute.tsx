@@ -13,7 +13,8 @@ function PublicOnlyRoute() {
   }
 
   if (session) {
-    return <Navigate to="/dashboard" replace />
+    const redirect = new URLSearchParams(window.location.search).get('redirect') || '/dashboard'
+    return <Navigate to={redirect} replace />
   }
 
   return <Outlet />

@@ -1,8 +1,9 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 function ProtectedRoute() {
   const { session, loading } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return (
@@ -13,7 +14,8 @@ function ProtectedRoute() {
   }
 
   if (!session) {
-    return <Navigate to="/login" replace />
+    const target = location.pathname + location.search
+    return <Navigate to={`/login?redirect=${encodeURIComponent(target)}`} replace />
   }
 
   return <Outlet />
