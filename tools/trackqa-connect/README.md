@@ -7,22 +7,19 @@ credentials. The connector does not install or authenticate the AI client itself
 
 ## Package status and installation
 
-The locally prepared release candidate is **trackqa@0.1.0**, with the `trackqa`
-executable. On November 4, 2026, npm identity `eronny`, verified email and completed
-`auth-and-writes` 2FA were checked. The registry returned 404 for `trackqa`; the name
-has not been reserved and first-publication acceptance is not guaranteed. The
-private flag was removed only for authorized local release-candidate preparation.
-**The package has not been published. Publication requires separate approval.**
-No alternative release identity is substituted.
+**trackqa@0.1.0** was published and independently verified on November 4, 2026.
+The locally prepared **v0.1.1 candidate** removes manual public-key setup for the
+official hosted TrackQA service. **v0.1.1 is not published; publication requires
+separate approval.** The original v0.1.0 artifact is retained unchanged.
 
 To verify an approved local tarball in a disposable directory:
 
 ```powershell
-npm install --ignore-scripts --no-audit --no-fund <absolute-path-to-trackqa-0.1.0.tgz>
+npm install --ignore-scripts --no-audit --no-fund <absolute-path-to-trackqa-0.1.1.tgz>
 npm exec --offline -- trackqa --help
 ```
 
-After the intended package is approved and published, the target workflow is:
+After v0.1.1 is approved and published, the official hosted workflow is:
 
 ```powershell
 npx trackqa connect
@@ -32,9 +29,11 @@ npx trackqa status --client codex
 npx trackqa disconnect --client codex --project <project-UUID>
 ```
 
-These registry commands are a future distribution workflow, not instructions to
-fetch an unverified package now. With a local installation use
-`npm exec --offline -- trackqa ...`. No client is selected by default.
+Until v0.1.1 is published, the bare registry command still resolves to v0.1.0 and
+retains that version's manual public-key requirement. Validate this candidate
+through a local tarball installation and `npm exec --offline -- trackqa ...`.
+Bare `connect` prompts for a client; `--client codex` is optional. No client is
+selected by default.
 
 ## Requirements and first use
 
@@ -46,19 +45,34 @@ fetch an unverified package now. With a local installation use
   MFA factors are currently refused as unsupported.
 - Free callback port **5173** on localhost. Stop a conflicting development server
   through its own terminal before setup; the connector never terminates it.
-- The deployment's **public anon/publishable Supabase key**, supplied using the
-  existing `TRACKQA_PUBLIC_KEY` environment variable. `VITE_SUPABASE_ANON_KEY` is an
-  alternative. Obtain this public value from the deployment operator; never use a
-  service-role key, database password, OAuth token or MCP bearer token.
+- Official hosted TrackQA's validated **public anon key is included**. No manual
+  `TRACKQA_PUBLIC_KEY` setup, application checkout or `.env` file is required.
 
 ```powershell
-$env:TRACKQA_PUBLIC_KEY = '<deployment-public-anon-or-publishable-key>'
 npm exec --offline -- trackqa connect --client codex
 ```
 
 The installed package uses its included shared runtime helpers; it does not need
 the application checkout or its environment files. Source-checkout fallback to the
 app's public-key setting is development-only. No `.env` file is packaged or created.
+
+### Advanced: custom public configuration
+
+The connector continues to pin its backend URL. A custom deployment uses a custom
+build pinned to its own backend, with a matching public key supplied through
+`TRACKQA_PUBLIC_KEY` or, alternatively, `VITE_SUPABASE_ANON_KEY`. A key override
+alone does not change the destination. No runtime URL override was added.
+
+```powershell
+$env:TRACKQA_PUBLIC_KEY = '<matching-deployment-public-anon-or-publishable-key>'
+```
+
+Explicit environment values take precedence over the development-file fallback
+and official default. Invalid explicit values fail closed. Legacy anon JWTs with
+a different project reference are rejected; opaque publishable keys cannot be
+associated with a deployment offline and must be validated by that backend.
+The official default is never used for a different pinned deployment. Never use
+a secret/service-role key, database password, Owner session or MCP bearer token.
 
 Select one client and one project, inspect the token-free preview, and approve
 installation, project MCP enablement if needed, and one scoped connection. The

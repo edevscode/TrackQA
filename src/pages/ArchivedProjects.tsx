@@ -13,13 +13,15 @@ import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import Avatar from '../components/Avatar'
 import ConfirmModal from '../components/ConfirmModal'
+import AiIntegrations from '../components/AiIntegrations'
 import { useAuth } from '../contexts/AuthContext'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
-import type { Project } from '../lib/database.types'
+import type { Project, ProjectRole } from '../lib/database.types'
 
 interface ArchivedProjectItem extends Project {
   member_count?: number
+  connection_role: ProjectRole
 }
 
 function formatDate(iso: string | null) {
@@ -68,7 +70,7 @@ function ArchivedProjects() {
 
     const { data, error } = await supabase
       .from('project_members')
-      .select('project:projects(*)')
+      .select('role,project:projects(*)')
       .eq('user_id', user.id)
 
     if (error) {
@@ -78,8 +80,8 @@ function ArchivedProjects() {
     }
 
     const projects = (data ?? [])
-      .map((row) => row.project)
-      .filter((p): p is Project => !!p && p.archived === true)
+      .filter((row) => row.project?.archived === true)
+      .map((row) => ({ ...row.project!, connection_role: row.role }))
       .sort((a, b) => {
         const timeA = a.archived_at ? new Date(a.archived_at).getTime() : 0
         const timeB = b.archived_at ? new Date(b.archived_at).getTime() : 0
@@ -225,7 +227,7 @@ function ArchivedProjects() {
             return (
               <div
                 key={project.id}
-                className="flex flex-col justify-between gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-outline transition-colors sm:flex-row sm:items-center"
+                className="grid gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md hover:border-outline transition-colors sm:grid-cols-[1fr_auto] sm:items-center"
               >
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-xs">
@@ -286,6 +288,7 @@ function ArchivedProjects() {
                     </button>
                   )}
                 </div>
+                <ArchivedConnections project={project} userId={user?.id ?? ''} />
               </div>
             )
           })}
@@ -362,3 +365,12 @@ function ArchivedProjects() {
 }
 
 export default ArchivedProjects
+
+/** Mount management reads only when the operator opens this archived project. */
+function ArchivedConnections({ project, userId }: { project: ArchivedProjectItem; userId: string }) {
+  const [opened, setOpened] = useState(false)
+  return <details className="mt-sm border-t border-outline-variant pt-sm sm:col-span-2" onToggle={event => setOpened(event.currentTarget.open)}>
+    <summary className="cursor-pointer text-label-md font-semibold text-primary">Manage Connections · {project.key}</summary>
+    {opened && <div className="mt-sm"><AiIntegrations project={project} userId={userId} role={project.connection_role} members={[]} managementOnly /></div>}
+  </details>
+}

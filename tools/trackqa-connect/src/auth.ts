@@ -7,15 +7,29 @@ import type { Api, Project } from './core.ts'
 import { fixtureMembershipRoute, fixtureRequestAllowed, fixtureScopeState, observeFixtureResponse } from './testing/copilot-fixture-scope.ts'
 import type { FixtureScope } from './testing/copilot-fixture-scope.ts'
 
+// Public browser configuration, paired with the official hosted project in the
+// app's trusted VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY configuration.
+// This is not an Owner session, MCP bearer credential, or service-role key.
+export const OFFICIAL_PUBLIC_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16ZXVpbXFmcnN3cndvYXFqZG1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMTUxMzMsImV4cCI6MjEwMzg5MTEzM30.w12klp31YCC3bydpI07QnewBoEi3pv6qFG0xxsMDOyY"
+
 export function isPublicKey(key: string) {
   if (/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) return true
   try { return JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString()).role === 'anon' } catch { return false }
 }
-export async function publicKey(env: NodeJS.ProcessEnv = process.env) {
+function keyMatchesDeployment(key: string, deploymentUrl: string) {
+  try {
+    const claims = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString())
+    // Legacy hosted anon keys identify their project. Opaque publishable keys
+    // cannot be associated offline; the destination still validates them.
+    return claims.ref === undefined || deploymentUrl === `https://${claims.ref}.supabase.co`
+  } catch { return key.startsWith('sb_publishable_') }
+}
+
+export async function publicKey(env: NodeJS.ProcessEnv = process.env, deploymentUrl = SUPABASE_URL) {
   let value = env.TRACKQA_PUBLIC_KEY ?? env.VITE_SUPABASE_ANON_KEY
   // Local development only: read the existing app's public key, never load its
   // other variables into process.env or pass them to the coding client.
-  if (!value) {
+  if (value === undefined) {
     for (const file of ['.env.local', '.env']) {
       try {
         const text = await readFile(new URL('../../../' + file, import.meta.url), 'utf8')
@@ -25,7 +39,11 @@ export async function publicKey(env: NodeJS.ProcessEnv = process.env) {
       } catch { /* No secret or filesystem error details leave this function. */ }
     }
   }
+  // Never send the official default to another deployment. A custom build must
+  // supply its own public key; invalid explicit overrides never fall back.
+  if (value === undefined && keyMatchesDeployment(OFFICIAL_PUBLIC_KEY, deploymentUrl)) value = OFFICIAL_PUBLIC_KEY
   requireValue(value && value.length <= 8192 && isPublicKey(value), 'public_key_required')
+  requireValue(keyMatchesDeployment(value, deploymentUrl), 'public_key_deployment_mismatch')
   return value
 }
 type AuthOptions = {
@@ -39,6 +57,7 @@ export type Owner = { userId: string; api: Api; projects: Project[] }
 // client never reach the client adapter or the recovery store.
 export async function withOwner<T>(options: AuthOptions, action: (owner: Owner) => Promise<T>): Promise<T> {
   requireValue(isPublicKey(options.key), 'public_key_required')
+  requireValue(keyMatchesDeployment(options.key, SUPABASE_URL), 'public_key_deployment_mismatch')
   if (options.fixtureScope) fixtureScopeState(options.fixtureScope)
   const posts = new Set<string>()
   const send = options.fetch ?? fetch

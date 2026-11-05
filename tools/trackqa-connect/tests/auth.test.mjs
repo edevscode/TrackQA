@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { withOwner } from '../src/auth.ts'
+import { withOwner, publicKey, OFFICIAL_PUBLIC_KEY, isPublicKey } from '../src/auth.ts'
 import { chooseProject } from '../src/workflow.ts'
 import { SUPABASE_URL } from '../src/core.ts'
 import { GOOGLE_REDIRECT } from '../../mcp-pilot/google-pkce.mjs'
@@ -31,7 +31,7 @@ function fixture(options = {}) {
       assert.equal(url.origin, SUPABASE_URL)
       assert.equal(init.redirect, 'error')
       assert.equal(init.headers.Authorization, 'Bearer ' + AUTH)
-      assert.equal(init.headers.apikey, 'sb_publishable_synthetic')
+      assert.equal(init.headers.apikey, config.key)
       calls.push({ path: url.pathname, method: init.method })
       assert.equal(init.method, 'GET')
       if (url.pathname.endsWith('/profiles')) return Response.json(options.noProfile ? [] : [{ id: USER }])
@@ -47,6 +47,42 @@ function fixture(options = {}) {
   return { config, calls, session, get signedOut() { return signedOut }, get settings() { return settings } }
 }
 const ui = { choose: async () => 0, say() {}, confirm: async () => true }
+test('official hosted default is explicitly public and tied to the pinned deployment', async () => {
+  const claims = JSON.parse(Buffer.from(OFFICIAL_PUBLIC_KEY.split('.')[1], 'base64url'))
+  assert.equal(claims.role, 'anon')
+  assert.equal(claims.iss, 'supabase')
+  assert.equal(`https://${claims.ref}.supabase.co`, SUPABASE_URL)
+  assert.ok(claims.exp > Date.now() / 1000)
+  assert.equal(isPublicKey(OFFICIAL_PUBLIC_KEY), true)
+  assert.equal((await publicKey({})) === OFFICIAL_PUBLIC_KEY, true)
+  const f = fixture()
+  f.config.key = await publicKey({})
+  await withOwner(f.config, async owner => assert.equal(owner.userId, USER))
+  assert.equal(f.signedOut, 1)
+})
+
+test('explicit environment overrides retain precedence and invalid values do not fall back', async () => {
+  assert.equal(await publicKey({ TRACKQA_PUBLIC_KEY: 'sb_publishable_primary', VITE_SUPABASE_ANON_KEY: 'sb_publishable_secondary' }), 'sb_publishable_primary')
+  assert.equal(await publicKey({ VITE_SUPABASE_ANON_KEY: 'sb_publishable_secondary' }), 'sb_publishable_secondary')
+  for (const value of ['', 'invalid', 'sb_secret_synthetic']) {
+    await assert.rejects(publicKey({ TRACKQA_PUBLIC_KEY: value }), error => error.code === 'public_key_required')
+  }
+})
+
+test('wrong-deployment anon keys fail before authorization; matching custom-build keys remain supported', async () => {
+  const jwt = claims => 'e30.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.synthetic'
+  const key = jwt({ role: 'anon', ref: 'other-project' })
+  await assert.rejects(publicKey({ TRACKQA_PUBLIC_KEY: key }), error => error.code === 'public_key_deployment_mismatch')
+  await assert.rejects(publicKey({ VITE_SUPABASE_ANON_KEY: key }), error => error.code === 'public_key_deployment_mismatch')
+  await assert.rejects(publicKey({}, 'https://other-project.supabase.co'))
+  assert.equal(await publicKey({ TRACKQA_PUBLIC_KEY: key }, 'https://other-project.supabase.co'), key)
+  const f = fixture()
+  f.config.key = key
+  await assert.rejects(withOwner(f.config, async () => assert.fail('Must not authorize')), error => error.code === 'public_key_deployment_mismatch')
+  assert.equal(f.settings, undefined)
+  assert.equal(f.calls.length, 0)
+})
+
 test('Google authentication is memory-only, verifies identity/profile, and selects a real Owner project without a pilot dependency', async () => {
   const f = fixture()
   const result = await withOwner(f.config, async owner => {

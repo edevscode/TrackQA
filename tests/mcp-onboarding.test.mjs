@@ -5,8 +5,9 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { mcpSetup, clientConfig, clientLaunch, connectionStatus, connectionFields, issueConnectionToken, watchTokenReveal, mcpTools } from '../src/lib/mcpOnboarding.ts'
+import { verifyConnectionRevoked } from '../src/lib/mcpConnections.ts'
 
-const { default: McpSetupGuide } = await import('../src/components/McpSetupGuide.tsx')
+const { default: McpSetupGuide, ConnectorSetupGuide } = await import('../src/components/McpSetupGuide.tsx')
 const PROJECT = '11111111-1111-4111-8111-111111111111'
 const OTHER = '22222222-2222-4222-8222-222222222222'
 const USER = '33333333-3333-4333-8333-333333333333'
@@ -193,4 +194,50 @@ test('non-reviewers get guidance without a review link', () => {
   const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, { setup, client: 'generic', phase: 'verify' })))
   assert.doesNotMatch(html, /href="\/ai-findings"/)
   assert.match(html, /human QA\/Owner/)
+})
+
+test('connector onboarding uses the published command, prerequisites and accurate compatibility labels without a manual secret', () => {
+  const html = renderToStaticMarkup(createElement(ConnectorSetupGuide, { isOwner: true, projectName: 'Synthetic project' }))
+  assert.match(html, /npx trackqa connect<\/code>/)
+  for (const text of ['Windows', '22.19', '5173', 'TRACKQA_PUBLIC_KEY', 'Google', 'MFA', '90 days', 'Codex CLI', 'VS Code Local', 'VS Code Copilot', 'Gemini CLI', 'Claude Code', 'Antigravity']) assert.ok(html.includes(text), text)
+  assert.match(html, /Ordinary connect remains guarded/)
+  assert.match(html, /No manual MCP token is needed/)
+  assert.match(html, /does not detect a live connection/)
+  assert.match(html, /TrackQA works without an AI client/)
+  assert.match(html, /v0\.1\.1 or newer includes official hosted configuration/)
+  assert.match(html, /no public-key setup is needed/)
+  assert.ok(html.indexOf('$env:TRACKQA_PUBLIC_KEY') > html.indexOf('Advanced: custom deployments'))
+  assert.doesNotMatch(html, /obtained from the deployment operator/)
+  assert.match(html, /npx trackqa status --client codex/)
+  assert.match(html, /npx trackqa disconnect --client codex/)
+  assert.doesNotMatch(html, /tqm_|--token|--project-name|One-time MCP token|Read-Host/)
+})
+
+test('non-Owner connector guidance asks for Owner setup rather than implying token issuance privileges', () => {
+  const html = renderToStaticMarkup(createElement(ConnectorSetupGuide, { isOwner: false, projectName: 'Synthetic project' }))
+  assert.match(html, /Connector setup is Owner-operated/)
+  assert.doesNotMatch(html, /Copy connector command/)
+})
+
+test('manual setup explains its separate authorization and revocation lifecycle', () => {
+  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(McpSetupGuide, { setup, client: 'codex', phase: 'prepare' })))
+  assert.match(html, /Advanced manual setup/)
+  assert.match(html, /does not revoke the token on exit/)
+})
+
+test('revocation requires a fresh matching project and connection row with a populated timestamp', async () => {
+  const row = { id: CONNECTION, project_id: PROJECT, revoked_at: '2026-01-02T00:00:00Z' }
+  let calls = 0
+  assert.equal(await verifyConnectionRevoked(async () => { calls++; return { data: row, error: null } }, PROJECT, CONNECTION), true)
+  assert.equal(calls, 1)
+  for (const data of [null, { ...row, id: OTHER }, { ...row, project_id: OTHER }, { ...row, revoked_at: null }, { ...row, revoked_at: '' }, { ...row, revoked_at: 'invalid' }]) {
+    assert.equal(await verifyConnectionRevoked(async () => ({ data, error: null }), PROJECT, CONNECTION), false)
+  }
+})
+
+test('failed or ambiguous revocation lookup stays uncertain and is never retried automatically', async () => {
+  let calls = 0
+  assert.equal(await verifyConnectionRevoked(async () => { calls++; throw new Error(TOKEN) }, PROJECT, CONNECTION), false)
+  assert.equal(calls, 1)
+  assert.equal(await verifyConnectionRevoked(async () => ({ data: { id: CONNECTION, project_id: PROJECT, revoked_at: '2026-01-02' }, error: { message: TOKEN } }), PROJECT, CONNECTION), false)
 })

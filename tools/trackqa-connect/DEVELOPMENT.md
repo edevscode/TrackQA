@@ -332,8 +332,9 @@ No token/password/key arguments, automatic yes flag, URL override, or alternate
 Supabase project are accepted. Omitting `--client` requires an explicit selection;
 there is no default. `status` is local-only and needs no Google sign-in.
 
-The CLI uses the existing public Supabase key from `TRACKQA_PUBLIC_KEY`,
-`VITE_SUPABASE_ANON_KEY`, or the app's existing `.env.local` / `.env` (source mode).
+Since v0.1.1, the official hosted public anon key is included. Explicit
+`TRACKQA_PUBLIC_KEY` / `VITE_SUPABASE_ANON_KEY` overrides and the app's existing
+`.env.local` / `.env` (source mode) remain available for the pinned deployment.
 Only public anon/publishable keys are accepted. Never supply a service-role key,
 database password or human access token. No environment files are written.
 

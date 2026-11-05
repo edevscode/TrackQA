@@ -5,7 +5,7 @@ import McpSetupGuide from './McpSetupGuide'
 import type { McpClient, McpSetup, TokenReveal } from '../lib/mcpOnboarding'
 import type { ProjectSettingsMember } from '../lib/cache'
 
-const clientNames = { codex: 'Codex CLI', claude: 'Claude Code', generic: 'Other MCP client' } as const
+const clientNames = { codex: 'Codex CLI', claude: 'Claude Code (experimental)', generic: 'Other MCP client (manual compatibility required)' } as const
 const primary = 'rounded-md bg-primary px-md py-sm text-label-md font-semibold text-on-primary hover:bg-primary-container disabled:opacity-50'
 const input = 'mt-xs w-full rounded-md border border-outline-variant bg-surface-container-lowest p-sm text-body-md text-on-surface'
 const titles = ['Choose your client', 'Prepare & approve access', 'Enter your token', 'Verify in your client']
@@ -48,7 +48,7 @@ export default function McpConnectWizard({ setup, isOwner, userId, members, enab
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-sm backdrop-blur-sm">
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="mcp-wizard-title" tabIndex={-1} className="flex max-h-[90dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-xl">
       <header className="flex items-start justify-between gap-sm border-b border-outline-variant p-md">
-        <div><p className="mb-xs text-label-md font-semibold text-primary">Connect to TrackQA · Step {step + 1} of 4</p><h2 id="mcp-wizard-title" className="text-headline-md font-semibold text-on-surface">{titles[step]}</h2></div>
+        <div><p className="mb-xs text-label-md font-semibold text-primary">Advanced / Manual Setup · Step {step + 1} of 4</p><h2 id="mcp-wizard-title" className="text-headline-md font-semibold text-on-surface">{titles[step]}</h2></div>
         <button type="button" disabled={busy} onClick={onClose} aria-label="Close setup" className="rounded-md p-xs text-on-surface-variant disabled:opacity-50"><X size={20} /></button>
       </header>
       <div className="min-w-0 space-y-md overflow-y-auto p-md">
@@ -56,7 +56,7 @@ export default function McpConnectWizard({ setup, isOwner, userId, members, enab
         {step === 0 && <>
           <p className="text-body-md text-on-surface-variant">Read project issues and send potential bugs for human review. Choose the client you already use.</p>
           <fieldset className="space-y-sm"><legend className="sr-only">MCP client</legend>{(Object.keys(clientNames) as McpClient[]).map(value => <label key={value} className={`flex cursor-pointer items-center gap-sm rounded-lg border p-md ${client === value ? 'border-primary bg-primary-fixed/20' : 'border-outline-variant'}`}><input type="radio" name="mcp-client" checked={client === value} onChange={() => setClient(value)} /><span className="text-body-md font-semibold text-on-surface">{clientNames[value]}{value === 'codex' && <span className="ml-sm text-body-sm font-normal text-on-surface-variant">Recommended</span>}</span></label>)}</fieldset>
-          <p className="text-body-sm text-on-surface-variant">Codex has been verified with TrackQA. Claude Code and other clients require their supported remote MCP setup.</p>
+          <p className="text-body-sm text-on-surface-variant">Codex is the validated MVP integration. Claude Code hosted validation is deferred due to account eligibility; generic clients need independent compatibility checks. This manual path does not use CLI-managed authorization or automatic revocation.</p>
         </>}
         {step === 1 && <>
           <McpSetupGuide key={client} setup={setup} client={client} phase="prepare" />

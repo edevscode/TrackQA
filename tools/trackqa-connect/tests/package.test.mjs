@@ -20,7 +20,7 @@ async function temporary(t){
 }
 
 test('publishable trackqa candidate preserves its identity and executable without the private flag',()=>{
-  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.0');assert.equal(Object.hasOwn(manifest,'private'),false)
+  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.1');assert.equal(Object.hasOwn(manifest,'private'),false)
   assert.deepEqual(manifest.bin,{trackqa:'dist/tools/trackqa-connect/src/cli.js'})
   assert.deepEqual(manifest.dependencies,{'@supabase/supabase-js':'2.113.0'})
   assert.equal(manifest.engines.node,'>=22.19.0')
@@ -49,6 +49,19 @@ test('built executable works outside the checkout without credentials and reject
   assert.equal(invalid.status,1);assert.match(invalid.stdout,/stopped: usage/)
   assert.equal(invalid.stdout.includes('synthetic-not-a-credential'),false)
   assert.deepEqual(await readdir(cwd),[],'Help and validation must not create auth or recovery state')
+})
+
+test('packaged hosted configuration resolves in an empty environment without checkout configuration or network access', async () => {
+  const { publicKey, OFFICIAL_PUBLIC_KEY } = await import(pathToFileURL(path.join(output, 'tools/trackqa-connect/src/auth.js')))
+  const { SUPABASE_URL } = await import(pathToFileURL(path.join(output, 'tools/trackqa-connect/src/core.js')))
+  assert.equal((await publicKey({})) === OFFICIAL_PUBLIC_KEY, true)
+  const claims = JSON.parse(Buffer.from(OFFICIAL_PUBLIC_KEY.split('.')[1], 'base64url'))
+  assert.equal(claims.role, 'anon')
+  assert.equal(`https://${claims.ref}.supabase.co`, SUPABASE_URL)
+  await assert.rejects(publicKey({ TRACKQA_PUBLIC_KEY: 'sb_secret_synthetic' }))
+  const cli = await readFile(entry, 'utf8')
+  assert.match(cli, /TrackQA Connect 0\.1\.1/)
+  assert.match(cli, /no TRACKQA_PUBLIC_KEY setup is required/)
 })
 
 test('compiled normal and direct workflow paths preserve the Copilot production guard',async()=>{

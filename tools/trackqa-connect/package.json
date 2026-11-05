@@ -1,6 +1,6 @@
 {
   "name": "trackqa",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Owner-operated TrackQA MCP connector for Windows",
   "type": "module",
   "bin": { "trackqa": "dist/tools/trackqa-connect/src/cli.js" },

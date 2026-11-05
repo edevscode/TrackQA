@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import ConfirmModal from './ConfirmModal'
 import McpConnectWizard from './McpConnectWizard'
+import { ConnectorSetupGuide } from './McpSetupGuide'
 import { supabase } from '../lib/supabase'
 import { connectionFields, connectionStatus, issueConnectionToken, mcpSetup, watchTokenReveal } from '../lib/mcpOnboarding'
 import type { TokenReveal } from '../lib/mcpOnboarding'
 import type { McpConnection, Project, ProjectRole } from '../lib/database.types'
 import type { ProjectSettingsMember } from '../lib/cache'
+import { verifyConnectionRevoked } from '../lib/mcpConnections'
 
 type Operation = { type: 'enable'; enabled: boolean } | { type: 'issue'; userId: string; label: string } | { type: 'revoke'; connection: McpConnection }
 const pageSize = 10
 
-export default function AiIntegrations({ project, userId, role, members }: {
-  project: Project; userId: string; role: ProjectRole | null; members: ProjectSettingsMember[]
+export default function AiIntegrations({ project, userId, role, members, managementOnly = false }: {
+  project: Project; userId: string; role: ProjectRole | null; members: ProjectSettingsMember[]; managementOnly?: boolean
 }) {
   const isOwner = role === 'OWNER' && !!userId
+  const titleId = useId()
   const [access, setAccess] = useState({ enabled: project.mcp_enabled, archived: project.archived })
   const [connections, setConnections] = useState<McpConnection[]>([])
   const [page, setPage] = useState(0)
@@ -24,6 +27,7 @@ export default function AiIntegrations({ project, userId, role, members }: {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [pendingRevocation, setPendingRevocation] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const wizardVisible = useRef(false)
   const [operation, setOperation] = useState<Operation | null>(null)
@@ -83,8 +87,28 @@ export default function AiIntegrations({ project, userId, role, members }: {
     return watchTokenReveal(() => setReveal(null), document, window)
   }, [reveal])
 
+  async function checkRevocation(connectionId: string) {
+    const confirmed = await verifyConnectionRevoked(() => supabase.from('mcp_connections')
+      .select('id,project_id,revoked_at').eq('project_id', project.id).eq('id', connectionId).maybeSingle(), project.id, connectionId)
+    if (active.current) {
+      setPendingRevocation(confirmed ? null : connectionId)
+      setNotice(confirmed ? 'Connection revoked. Server verification confirmed its token can no longer authorize requests.'
+        : 'Revocation verification is pending. Check revocation or refresh connections before retrying; no revoke mutation is automatically repeated.')
+    }
+    return confirmed
+  }
+
+  async function recheckRevocation() {
+    if (!isOwner || !pendingRevocation || mutating.current) return
+    mutating.current = true
+    setBusy(true)
+    setError(null)
+    try { await checkRevocation(pendingRevocation); if (active.current) await load() }
+    finally { mutating.current = false; if (active.current) setBusy(false) }
+  }
+
   async function perform(operation: Operation): Promise<boolean> {
-    if (!isOwner || mutating.current) return false
+    if (!isOwner || mutating.current || (managementOnly && operation.type !== 'revoke')) return false
     mutating.current = true
     setBusy(true)
     setError(null)
@@ -97,9 +121,10 @@ export default function AiIntegrations({ project, userId, role, members }: {
         if (active.current) setNotice(operation.enabled ? 'MCP enabled for this project. Each connection still needs Owner approval.' : 'MCP disabled. All connections to this project are blocked.')
       } else if (operation.type === 'revoke') {
         if (operation.connection.project_id !== project.id) throw new Error('Unavailable')
+        setPendingRevocation(operation.connection.id)
         const result = await supabase.rpc('revoke_mcp_connection', { p_connection_id: operation.connection.id })
         if (result.error) throw new Error('Unavailable')
-        if (active.current) setNotice('Connection revoked. Its token can no longer authorize requests.')
+        await checkRevocation(operation.connection.id)
       } else {
         if (!loaded) throw new Error('Unavailable')
         const issued = await issueConnectionToken(args => supabase.rpc('issue_mcp_connection_token', args), {
@@ -115,7 +140,7 @@ export default function AiIntegrations({ project, userId, role, members }: {
           // No token is retained for an account/project that is no longer visible.
           const revoked = await supabase.rpc('revoke_mcp_connection', { p_connection_id: issued.connectionId })
           if (revoked.error) throw new Error('Unavailable')
-          if (active.current) setNotice('The token could not be displayed. The new connection was revoked; no token was saved.')
+          await checkRevocation(issued.connectionId)
           if (active.current) await load()
           return false
         } else if (active.current) setNotice('Connection approved. Use the one-time token in setup, or revoke access in Manage Connections.')
@@ -125,6 +150,7 @@ export default function AiIntegrations({ project, userId, role, members }: {
     } catch {
       if (active.current) setError(operation.type === 'issue'
         ? 'Token issuance could not be completed. Refresh connections and revoke any new entry before trying again. Issuance is never automatically retried.'
+        : operation.type === 'revoke' ? 'Revocation could not be confirmed. Check revocation or refresh connections before retrying. No automatic retry was made.'
         : 'The change could not be verified. Refresh to check its current state before trying again.')
       return false
     } finally {
@@ -142,24 +168,29 @@ export default function AiIntegrations({ project, userId, role, members }: {
   function refresh() { setLoading(true); void load() }
   function selectPage(next: number) { setPage(next); setLoading(true) }
   const recipientName = (id: string | null) => members.find(member => member.user_id === id)?.full_name
-    || members.find(member => member.user_id === id)?.email || 'Former member'
+    || members.find(member => member.user_id === id)?.email || (managementOnly && id ? id === userId ? 'You' : 'Project member' : 'Former member')
   return <div className="space-y-lg">
-    <section className="rounded-xl border border-outline-variant p-md sm:p-lg" aria-labelledby="ai-integrations-title">
+    <section className="rounded-xl border border-outline-variant p-md sm:p-lg" aria-labelledby={titleId}>
       <div className="flex flex-wrap items-center justify-between gap-sm">
-        <h2 id="ai-integrations-title" className="text-headline-md font-semibold text-on-surface">AI Integrations</h2>
+        <h2 id={titleId} className="text-headline-md font-semibold text-on-surface">{managementOnly ? `${project.name} · Connections` : 'AI Integrations'}</h2>
         <span className="rounded-md bg-surface-container-low px-sm py-xs text-label-md text-on-surface-variant">{!loaded ? 'Access not verified' : access.archived ? 'Project archived' : access.enabled ? 'Project access enabled' : 'Project access disabled'}</span>
       </div>
-      <p className="mt-sm max-w-[640px] text-body-md text-on-surface-variant">Bring your coding assistant into TrackQA. Read project issues and send potential bugs for human review.</p>
-      <button type="button" disabled={!setup || busy || loading || !loaded || access.archived} onClick={() => { setError(null); wizardVisible.current = true; setWizardOpen(true) }} className="mt-md rounded-md bg-primary px-lg py-sm text-label-md font-semibold text-on-primary hover:bg-primary-container disabled:opacity-50">Connect Codex</button>
-      <p className="mt-sm text-body-sm text-on-surface-variant">Guided setup · Claude Code and other MCP clients also available</p>
-      <p className="mt-xs text-body-sm text-on-surface-variant">Project access is separate from a live client connection. Verify the connection in your client.</p>
-      {access.archived && <p className="mt-sm text-body-sm text-on-surface-variant">Unarchive this project before connecting a client.</p>}
-      {!setup && <p role="alert" className="mt-sm text-body-sm text-error">The endpoint configuration could not be verified. Contact the project administrator.</p>}
+      {managementOnly ? <p className="mt-sm text-body-sm text-on-surface-variant">Inspect existing access and revoke connections without restoring this project. Setup, token issuance and project access changes are unavailable here.</p>
+        : access.archived ? <p className="mt-sm text-body-sm text-on-surface-variant">Project archived. Existing connections can be revoked below; new setup is unavailable.</p> : <>
+          <ConnectorSetupGuide isOwner={isOwner} projectName={project.name} />
+          <details className="mt-md rounded-md border border-outline-variant p-sm">
+            <summary className="cursor-pointer text-label-md font-semibold text-on-surface">Advanced / Manual Setup</summary>
+            <p className="mt-sm text-body-sm text-on-surface-variant">Legacy setup: manually merge configuration and use a one-time Owner-issued token. This is separate from the recommended connector workflow; an Owner must revoke these tokens manually.</p>
+            <button type="button" disabled={!setup || busy || loading || !loaded} onClick={() => { setError(null); wizardVisible.current = true; setWizardOpen(true) }} className="mt-sm rounded-md border border-outline-variant px-md py-sm text-label-md font-semibold text-primary disabled:opacity-50">Open manual setup</button>
+          </details>
+          {!setup && <p role="alert" className="mt-sm text-body-sm text-error">The manual endpoint configuration could not be verified. Contact the project administrator.</p>}
+        </>}
     </section>
     {!wizardOpen && error && <p role="alert" className="rounded-md bg-error-container p-sm text-body-md text-on-error-container">{error}</p>}
     {notice && <p role="status" className="text-body-sm text-on-surface-variant">{notice}</p>}
+    {pendingRevocation && isOwner && <button type="button" onClick={() => void recheckRevocation()} disabled={busy || loading} className="rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary disabled:opacity-50">Check revocation</button>}
     {loadError && <p role="alert" className="text-body-md text-error">{loadError}</p>}
-    <details className="rounded-lg border border-outline-variant p-md">
+    <details open={managementOnly || undefined} className="rounded-lg border border-outline-variant p-md">
       <summary className="cursor-pointer text-body-lg font-semibold text-on-surface">Manage Connections</summary>
       <section className="mt-md space-y-md" aria-label="Connection management">
         <div className="flex flex-wrap items-center justify-between gap-sm">
@@ -167,11 +198,12 @@ export default function AiIntegrations({ project, userId, role, members }: {
           <button type="button" onClick={refresh} disabled={busy || loading} aria-label="Refresh integration status" className="rounded-md border border-outline-variant p-xs text-on-surface-variant disabled:opacity-50"><RefreshCw size={16} /></button>
         </div>
         <p className="text-body-sm text-on-surface-variant">Disabling project access blocks every connection. Re-enabling restores eligible connections. Revocation permanently invalidates an individual token. Access status does not indicate live client activity.</p>
-        {isOwner ? <button type="button" disabled={busy || loading || !loaded || !setup || (access.archived && !access.enabled)} onClick={() => setOperation({ type: 'enable', enabled: !access.enabled })} className="rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary disabled:opacity-50">{access.enabled ? 'Disable project access' : 'Enable project access'}</button> : <p className="text-body-sm text-on-surface-variant">Only Owners can enable project access, issue tokens or revoke connections.</p>}
-        {loading ? <p role="status" className="text-body-md text-on-surface-variant">Checking access…</p> : connections.length === 0 && !loadError ? <p className="text-body-md text-on-surface-variant">{isOwner ? 'No connections yet. Use Connect Codex to get started.' : 'No connections visible for your account. Ask an Owner for access.'}</p> : <ul className="divide-y divide-outline-variant">{connections.map(connection => <li key={connection.id} className="flex flex-col justify-between gap-sm py-sm sm:flex-row sm:items-center">
+        {!managementOnly && isOwner && <button type="button" disabled={busy || loading || !loaded || !setup || (access.archived && !access.enabled)} onClick={() => setOperation({ type: 'enable', enabled: !access.enabled })} className="rounded-md border border-outline-variant px-sm py-xs text-label-md font-semibold text-primary disabled:opacity-50">{access.enabled ? 'Disable project access' : 'Enable project access'}</button>}
+        {!isOwner && <p className="text-body-sm text-on-surface-variant">Only Owners can enable project access, issue tokens or revoke connections. Connection visibility follows your project permissions.</p>}
+        {loading ? <p role="status" className="text-body-md text-on-surface-variant">Checking access…</p> : connections.length === 0 && !loadError ? <p className="text-body-md text-on-surface-variant">{isOwner ? managementOnly ? 'No existing connections.' : 'No connections yet. Use the connector command above to get started.' : 'No connections visible for your account. Ask an Owner for access.'}</p> : <ul className="divide-y divide-outline-variant">{connections.map(connection => <li key={connection.id} className="flex flex-col justify-between gap-sm py-sm sm:flex-row sm:items-center">
           <div className="min-w-0">
             <p className="break-words text-body-md font-semibold text-on-surface">{connection.client_label}</p>
-            <p className="text-body-sm text-on-surface-variant">{recipientName(connection.user_id)} · {loaded ? connectionStatus(connection, access.enabled, access.archived, members.some(member => member.user_id === connection.user_id), now) : 'Access not verified'}</p>
+            <p className="text-body-sm text-on-surface-variant">{recipientName(connection.user_id)} · {pendingRevocation === connection.id ? 'Revocation unverified' : loaded ? connectionStatus(connection, access.enabled, access.archived, members.some(member => member.user_id === connection.user_id), now) : 'Access not verified'}</p>
             <p className="text-body-sm text-on-surface-variant">Expires {new Date(connection.token_expires_at).toLocaleString()}</p>
             <details className="mt-xs text-body-sm text-on-surface-variant"><summary className="cursor-pointer">Advanced: connection ID</summary><p className="break-all font-mono text-code-xs">{connection.id}</p></details>
           </div>
@@ -180,7 +212,7 @@ export default function AiIntegrations({ project, userId, role, members }: {
         {(page > 0 || hasMore) && <div className="flex justify-end gap-sm text-body-sm text-on-surface-variant"><button type="button" disabled={page === 0 || loading || busy} onClick={() => selectPage(page - 1)} className="disabled:opacity-40">Previous</button><span>Page {page + 1}</span><button type="button" disabled={!hasMore || loading || busy} onClick={() => selectPage(page + 1)} className="disabled:opacity-40">Next</button></div>}
       </section>
     </details>
-    {wizardOpen && setup && <McpConnectWizard setup={setup} isOwner={isOwner} userId={userId} members={members} enabled={access.enabled} available={loaded && !loading && !access.archived} busy={busy} error={error} reveal={reveal} onEnable={() => perform({ type: 'enable', enabled: true })} onIssue={(userId, label) => perform({ type: 'issue', userId, label })} onDiscard={() => setReveal(null)} onClose={closeWizard} canReview={role === 'QA' || isOwner} />}
+    {!managementOnly && wizardOpen && setup && <McpConnectWizard setup={setup} isOwner={isOwner} userId={userId} members={members} enabled={access.enabled} available={loaded && !loading && !access.archived} busy={busy} error={error} reveal={reveal} onEnable={() => perform({ type: 'enable', enabled: true })} onIssue={(userId, label) => perform({ type: 'issue', userId, label })} onDiscard={() => setReveal(null)} onClose={closeWizard} canReview={role === 'QA' || isOwner} />}
     <ConfirmModal open={!!operation} onClose={() => { if (!busy) setOperation(null) }} onConfirm={() => { if (operation) void perform(operation) }} isLoading={busy}
       title={operation?.type === 'revoke' ? 'Revoke this connection?' : operation?.type === 'enable' && operation.enabled ? 'Enable project access?' : 'Disable project access?'}
       description={operation?.type === 'revoke' ? `Permanently invalidate the token for "${operation.connection.client_label}". Other connections are unaffected.` : operation?.type === 'enable' && operation.enabled ? 'Owner-approved connections will be able to read issues and submit findings for human review. Eligible existing connections may resume.' : 'All connections to this project will be blocked. Tokens may work again if access is re-enabled before expiry. Revoke a connection to permanently invalidate it.'}

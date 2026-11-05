@@ -19,7 +19,7 @@ import { Store } from './state.ts'
 import { connect, disconnect, status } from './workflow.ts'
 import type { UI } from './workflow.ts'
 
-export const help = `TrackQA Connect 0.1.0 - Windows, Owner-operated MVP release candidate
+export const help = `TrackQA Connect 0.1.1 - Windows, Owner-operated MVP release candidate
 Usage after installing the approved package or local tarball:
   trackqa connect --client codex
   trackqa status --client codex
@@ -37,7 +37,8 @@ VS Code optional: --vscode-path <trusted installed absolute Code.exe>; supported
 Claude connect only: --claude-only excludes other MCP servers for this session (opt-in).
 No client is selected by default. AI-client accounts are separate from TrackQA sign-in.
 Requires Node >=22.19, Windows, a free localhost callback port 5173 and Google Owner authorization; MFA accounts are unsupported.
-Set TRACKQA_PUBLIC_KEY to the deployment's public anon/publishable key. Never supply a secret or service-role key.
+Official hosted TrackQA public configuration is included; no TRACKQA_PUBLIC_KEY setup is required.
+Advanced: TRACKQA_PUBLIC_KEY or VITE_SUPABASE_ANON_KEY overrides the public key for the build's pinned backend. Never use a secret or service-role key.
 No bearer token is saved. The existing 90-day token expiry is unchanged; session cleanup attempts and independently verifies revocation.
 Status is local-only: it does not authorize or test a live MCP connection.
 Disconnect may require fresh Google Owner sign-in. Never pass credentials as arguments.`
@@ -63,6 +64,7 @@ export async function locations(env: NodeJS.ProcessEnv = process.env, client: Cl
 }
 const codes = new Set(`usage configuration_busy configuration_write_failed configuration_write_uncertain gemini_auto_update_enabled gemini_compatibility_unverified client_unsupported client_foreground_unsupported client_not_found executable_untrusted executable_changed public_key_required authentication_failed callback_port_in_use callback_unavailable callback_timeout callback_rejected oauth_denied oauth_failed browser_open_failed interrupted identity_unverified profile_required mfa_unsupported owner_required no_eligible_owner_projects project_unavailable project_selection_unavailable request_failed response_invalid response_limit signout_unconfirmed configuration_unreadable configuration_conflict configuration_changed configuration_home_mismatch configuration_location_untrusted installation_unconfirmed removal_unconfirmed recovery_invalid recovery_unavailable existing_connection_recover_first connector_busy_or_stale_lock enablement_unconfirmed issuance_unconfirmed token_invalid cleanup_unconfirmed no_managed_connections client_command_failed client_command_timeout client_response_limit client_launch_failed client_exit_failed verification_initialization_failed verification_discovery_failed verification_connection_status_failed verification_project_scope_failed`.split(' '))
 export function safeCode(error: unknown) {
+  if (error instanceof ConnectorError && error.code === 'public_key_deployment_mismatch') return error.code
   if (error instanceof ConnectorError && ['copilot_runtime_unverified', 'copilot_process_unconfirmed'].includes(error.code)) return error.code
   if (error instanceof ConnectorError && error.code === 'vscode_process_unconfirmed') return error.code
   if (error instanceof ConnectorError && codes.has(error.code)) return error.code
