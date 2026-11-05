@@ -111,7 +111,7 @@ export default function AiIntegrations({ project, userId, role, members, managem
         if (updateError) throw updateError
         if (active.current) setAccess(prev => ({ ...prev, enabled: next.enabled }))
       } else {
-        const { error: rpcError } = await supabase.rpc('revoke_mcp_connection', { p_project_id: project.id, p_connection_id: next.connection.id })
+        const { error: rpcError } = await supabase.rpc('revoke_mcp_connection', { p_connection_id: next.connection.id })
         if (rpcError) throw rpcError
         await checkRevocation(next.connection.id)
       }
