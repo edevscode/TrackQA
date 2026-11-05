@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { execSync } from 'node:child_process'
+import { makeSecureDir, writeSecureFile } from './fs-secure.js'
 
 export const name = 'Codex CLI'
 
@@ -51,9 +52,7 @@ export async function configure({ endpoint, token, configPath }) {
   const configFile = configPath || getConfigPath()
   const configDir = path.dirname(configFile)
 
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true })
-  }
+  makeSecureDir(configDir)
 
   let content = ''
   if (fs.existsSync(configFile)) {
@@ -64,6 +63,6 @@ export async function configure({ endpoint, token, configPath }) {
   const newSection = `[mcp_servers.trackqa]\nurl = "${endpoint}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`
 
   content = updateTomlSection(content, sectionHeader, newSection)
-  fs.writeFileSync(configFile, content, 'utf8')
+  writeSecureFile(configFile, content)
   return { ok: true, targetPath: configFile }
 }

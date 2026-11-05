@@ -9,6 +9,7 @@ import * as vscode from '../src/clients/vscode.js'
 import * as claude from '../src/clients/claude.js'
 import * as windsurf from '../src/clients/windsurf.js'
 import * as codex from '../src/clients/codex.js'
+import { protectGitIgnore } from '../src/git-protect.js'
 
 test('clients test suite', async t => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackqa-cli-test-'))
@@ -158,5 +159,27 @@ url = "https://other.com/mcp"
     assert.equal((updated.match(/\[mcp_servers\.trackqa\]/g) || []).length, 1)
     assert.match(updated, /Authorization" = "Bearer tqm_testcodex2/)
     assert.doesNotMatch(updated, /tqm_testcodex1/)
+  })
+
+  await t.test('protectGitIgnore protects local credentials from accidental git commits', async () => {
+    const gitRepoDir = path.join(tempDir, 'mock-repo')
+    fs.mkdirSync(path.join(gitRepoDir, '.git'), { recursive: true })
+    fs.writeFileSync(path.join(gitRepoDir, '.gitignore'), 'node_modules\ndist\n', 'utf8')
+
+    const targetFile = path.join(gitRepoDir, '.mcp.json')
+    const updated = protectGitIgnore(targetFile, gitRepoDir)
+    assert.equal(updated, true)
+
+    const gitignoreContent = fs.readFileSync(path.join(gitRepoDir, '.gitignore'), 'utf8')
+    assert.match(gitignoreContent, /\.mcp\.json/)
+
+    // Idempotent: repeated call does not duplicate
+    const updatedAgain = protectGitIgnore(targetFile, gitRepoDir)
+    assert.equal(updatedAgain, false)
+
+    // Not inside git repo
+    const nonGitDir = path.join(tempDir, 'non-git')
+    fs.mkdirSync(nonGitDir, { recursive: true })
+    assert.equal(protectGitIgnore(path.join(nonGitDir, '.mcp.json'), nonGitDir), false)
   })
 })

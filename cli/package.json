@@ -1,6 +1,6 @@
 {
   "name": "trackqa",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TrackQA AI Agent Auto-Setup CLI",
   "type": "module",
   "bin": {

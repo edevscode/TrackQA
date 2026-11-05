@@ -23,7 +23,7 @@ export default function AuthorizeAgent() {
 
   const port = portParam ? parseInt(portParam, 10) : null
   const isValidPort = port !== null && Number.isInteger(port) && port >= 1024 && port <= 65535
-  const isValidState = Boolean(stateParam && stateParam.length >= 8 && stateParam.length <= 128)
+  const isValidState = Boolean(stateParam && /^[0-9a-fA-F]{16,128}$/.test(stateParam))
 
   const [loading, setLoading] = useState(true)
   const [projects, setProjects] = useState<EligibleProject[]>([])
@@ -76,7 +76,7 @@ export default function AuthorizeAgent() {
 
   function handleCancel() {
     if (isValidPort && isValidState) {
-      window.location.href = `http://127.0.0.1:${port}/callback?state=${encodeURIComponent(stateParam!)}&error=cancelled`
+      window.location.replace(`http://127.0.0.1:${port}/callback?state=${encodeURIComponent(stateParam!)}&error=cancelled`)
     } else {
       navigate('/dashboard')
     }
@@ -128,7 +128,7 @@ export default function AuthorizeAgent() {
       )}`
 
       setTimeout(() => {
-        window.location.href = callbackUrl
+        window.location.replace(callbackUrl)
       }, 500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to authorize AI agent.')

@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { makeSecureDir, writeSecureFile } from './fs-secure.js'
+import { protectGitIgnore } from '../git-protect.js'
 
 export const name = 'VS Code'
 
@@ -28,9 +30,7 @@ export async function configure({ endpoint, token, configPath }) {
   const configFile = configPath || getConfigPath()
   const configDir = path.dirname(configFile)
 
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true })
-  }
+  makeSecureDir(configDir)
 
   let config = {}
   if (fs.existsSync(configFile)) {
@@ -42,6 +42,7 @@ export async function configure({ endpoint, token, configPath }) {
     } catch {
       const backup = `${configFile}.bak.${Date.now()}`
       fs.copyFileSync(configFile, backup)
+      try { fs.chmodSync(backup, 0o600) } catch {}
       config = {}
     }
   }
@@ -55,6 +56,7 @@ export async function configure({ endpoint, token, configPath }) {
     },
   }
 
-  fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n', 'utf8')
+  writeSecureFile(configFile, JSON.stringify(config, null, 2) + '\n')
+  protectGitIgnore(configFile)
   return { ok: true, targetPath: configFile }
 }

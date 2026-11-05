@@ -41,22 +41,37 @@ export async function runSetup(options = {}) {
       const projectName = parsedUrl.searchParams.get('project_name')
       const endpoint = parsedUrl.searchParams.get('endpoint')
 
+      const SECURITY_HEADERS = {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, private, must-revalidate',
+        'Pragma': 'no-cache',
+        'Referrer-Policy': 'no-referrer',
+      }
+
       if (receivedState !== state) {
-        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.writeHead(400, SECURITY_HEADERS)
         res.end('<h3>Invalid state parameter. Authorization rejected.</h3>')
         return
       }
 
       if (error === 'cancelled') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.writeHead(200, SECURITY_HEADERS)
         res.end(`
           <!DOCTYPE html>
           <html>
+            <head>
+              <meta name="referrer" content="no-referrer" />
+            </head>
             <body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
               <div style="text-align:center;padding:32px;background:white;border-radius:12px;box-shadow:0 4px 6px -1px rgb(0 0 0/0.1);max-width:400px;">
                 <h2 style="color:#0f172a;margin-top:0;">Setup Cancelled</h2>
                 <p style="color:#64748b;">You cancelled authorization. You can close this tab.</p>
               </div>
+              <script>
+                if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+                  window.history.replaceState({}, '', window.location.pathname);
+                }
+              </script>
             </body>
           </html>
         `)
@@ -66,15 +81,18 @@ export async function runSetup(options = {}) {
       }
 
       if (!token || !projectId || !endpoint) {
-        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.writeHead(400, SECURITY_HEADERS)
         res.end('<h3>Incomplete authorization parameters.</h3>')
         return
       }
 
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.writeHead(200, SECURITY_HEADERS)
       res.end(`
         <!DOCTYPE html>
         <html>
+          <head>
+            <meta name="referrer" content="no-referrer" />
+          </head>
           <body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
             <div style="text-align:center;padding:32px;background:white;border-radius:12px;box-shadow:0 4px 6px -1px rgb(0 0 0/0.1);max-width:400px;">
               <div style="width:48px;height:48px;margin:0 auto 16px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;">
@@ -83,6 +101,11 @@ export async function runSetup(options = {}) {
               <h2 style="color:#0f172a;margin-top:0;">TrackQA Authorized!</h2>
               <p style="color:#64748b;">Return to your terminal to see configuration results.</p>
             </div>
+            <script>
+              if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+                window.history.replaceState({}, '', window.location.pathname);
+              }
+            </script>
           </body>
         </html>
       `)

@@ -25,28 +25,35 @@ test('authorization loopback server handling', async t => {
         const projectName = parsedUrl.searchParams.get('project_name')
         const endpoint = parsedUrl.searchParams.get('endpoint')
 
+        const SECURITY_HEADERS = {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, private, must-revalidate',
+          'Pragma': 'no-cache',
+          'Referrer-Policy': 'no-referrer',
+        }
+
         if (receivedState !== expectedState) {
-          res.writeHead(400, { 'Content-Type': 'text/plain' })
-          res.end('State mismatch')
+          res.writeHead(400, SECURITY_HEADERS)
+          res.end('<h3>Invalid state parameter. Authorization rejected.</h3>')
           return
         }
 
         if (error === 'cancelled') {
-          res.writeHead(200, { 'Content-Type': 'text/plain' })
-          res.end('Cancelled')
+          res.writeHead(200, SECURITY_HEADERS)
+          res.end('<h3>Setup Cancelled</h3><script>window.history.replaceState({}, "", "/");</script>')
           server.close()
           capturedResolve({ cancelled: true })
           return
         }
 
         if (!token || !projectId || !endpoint) {
-          res.writeHead(400, { 'Content-Type': 'text/plain' })
-          res.end('Incomplete')
+          res.writeHead(400, SECURITY_HEADERS)
+          res.end('<h3>Incomplete authorization parameters.</h3>')
           return
         }
 
-        res.writeHead(200, { 'Content-Type': 'text/plain' })
-        res.end('OK')
+        res.writeHead(200, SECURITY_HEADERS)
+        res.end('<h3>TrackQA Authorized!</h3><script>window.history.replaceState({}, "", "/");</script>')
         server.close()
         capturedResolve({
           cancelled: false,
@@ -74,6 +81,10 @@ test('authorization loopback server handling', async t => {
       fetch(url)
     ])
     assert.equal(res.status, 200)
+    assert.match(res.headers.get('cache-control') || '', /no-store/)
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer')
+    const bodyText = await res.text()
+    assert.match(bodyText, /replaceState/)
     assert.equal(data.cancelled, false)
     assert.equal(data.token, 'tqm_test123')
     assert.equal(data.projectId, 'p-123')
