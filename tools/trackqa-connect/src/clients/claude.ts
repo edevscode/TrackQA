@@ -16,7 +16,9 @@ export function trustedClaudeLocation(file: string, home = os.homedir(), platfor
   const paths = platform === 'win32' ? path.win32 : path.posix
   if (!paths.isAbsolute(file) || paths.basename(file).toLowerCase() !== 'claude.exe' || platform !== 'win32') return false
   const within = (root: string) => paths.resolve(file).toLowerCase().startsWith(paths.resolve(root).toLowerCase() + paths.sep)
-  if (within(cwd) || paths.resolve(file).toLowerCase() === paths.resolve(cwd).toLowerCase()) return false
+  const workspace = paths.resolve(cwd).toLowerCase(), relative = paths.relative(workspace, paths.resolve(file).toLowerCase())
+  const inWorkspace = relative === '' || (relative !== '..' && !relative.startsWith('..' + paths.sep) && !paths.isAbsolute(relative))
+  if (inWorkspace && workspace !== paths.resolve(home).toLowerCase()) return false
   const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'
   return [paths.join(home, '.local', 'bin'), paths.join(home, '.local', 'share', 'claude', 'versions'),
     paths.join(programFiles, 'ClaudeCode')].some(within)

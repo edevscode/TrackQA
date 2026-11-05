@@ -19,7 +19,7 @@ import { Store } from './state.ts'
 import { connect, disconnect, status } from './workflow.ts'
 import type { UI } from './workflow.ts'
 
-export const help = `TrackQA Connect 0.1.2 - Windows, Owner-operated MVP release candidate
+export const help = `TrackQA Connect 0.1.3 - Windows, Owner-operated MVP release candidate
 Usage after installing the approved package or local tarball:
   trackqa connect --client codex
   trackqa status --client codex
@@ -72,7 +72,7 @@ export async function locations(env: NodeJS.ProcessEnv = process.env, client: Cl
   const geminiHome = env.GEMINI_CLI_HOME ?? os.homedir()
   const geminiCanonical = await realpath(geminiHome).catch(() => path.resolve(geminiHome))
   if (client === 'gemini') {
-    requireValue(path.isAbsolute(geminiHome) && !under(geminiCanonical, repo) && !under(geminiCanonical, process.cwd()), 'configuration_location_untrusted')
+    requireValue(path.isAbsolute(geminiHome) && isSafeConfigurationRoot(geminiCanonical, cwd, repo, home, home), 'configuration_location_untrusted')
     const config = path.join(geminiCanonical, '.gemini')
     const resolved = await realpath(config).catch(() => config)
     requireValue(resolved.toLowerCase() === config.toLowerCase(), 'configuration_location_untrusted')
@@ -202,7 +202,7 @@ export async function main(args = process.argv.slice(2)) {
     if (code === 'vscode_process_unconfirmed') process.stdout.write('VS Code process termination is unconfirmed. Close only the TrackQA Local instance, then run disconnect --client vscode using the same project. Keep process.json and recovery metadata; do not delete them to bypass the check. New unrelated Code processes can also require a conservative refusal. No process was force-killed.\n')
     if (code === 'configuration_busy') process.stdout.write('Settings are locked by another writer or a stale .trackqa-settings.lock. Close other configuration writers. Remove only a stale lock after confirming its recorded helper PID has exited.\n')
     if (code === 'configuration_write_failed' || code === 'configuration_write_uncertain') process.stdout.write('Settings replacement failed or its outcome is uncertain. Do not retry automatically. Inspect settings.json and any .trackqa-settings-recovery-*.bak in the selected Gemini home; preserve recovery metadata and compare/merge before restoring anything.\n')
-    if (code === 'client_not_found') process.stdout.write('Selected client was not found in supported installation locations. No installation was attempted. For Gemini supply the existing @google/gemini-cli bin with --gemini-path; agy.exe is not Gemini CLI.\n')
+    if (code === 'client_not_found') process.stdout.write('Selected AI client was not found in supported installation locations. Install it independently or use the matching --codex-path, --gemini-path, --claude-path or --vscode-path option for an existing supported installation. No installation or login was attempted.\n')
     if (code === 'client_not_found' && args.includes('claude')) process.stdout.write('Claude Code requires an independently installed native Windows claude.exe; npm shims and Desktop are not selected. Use --claude-path for an existing supported native installation. No login or installation was attempted.\n')
     if (code === 'gemini_compatibility_unverified') process.stdout.write('Gemini capability or isolated JSON editor checks failed. Native add/remove are never used on real settings. No Owner sign-in or token issuance was attempted.\n')
     if (code === 'gemini_auto_update_enabled') process.stdout.write('Disable general.enableAutoUpdate using Gemini settings before this connector launches it. Workspace/system overrides must not re-enable it. The connector did not change your preferences or upgrade the client.\n')

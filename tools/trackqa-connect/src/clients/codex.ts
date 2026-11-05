@@ -13,7 +13,9 @@ export function trustedLocation(file: string, home = os.homedir(), platform = pr
   const paths = platform === 'win32' ? path.win32 : path.posix
   const normalized = paths.resolve(file).toLowerCase()
   const within = (root: string) => normalized.startsWith(paths.resolve(root).toLowerCase() + paths.sep)
-  if (!paths.isAbsolute(file) || within(cwd) || normalized === paths.resolve(cwd).toLowerCase()) return false
+  const workspace = paths.resolve(cwd).toLowerCase(), relative = paths.relative(workspace, normalized)
+  const inWorkspace = relative === '' || (relative !== '..' && !relative.startsWith('..' + paths.sep) && !paths.isAbsolute(relative))
+  if (!paths.isAbsolute(file) || (inWorkspace && workspace !== paths.resolve(home).toLowerCase())) return false
   if (platform === 'win32') {
     if (paths.basename(file).toLowerCase() !== 'codex.exe') return false
     const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'

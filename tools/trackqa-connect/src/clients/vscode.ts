@@ -15,7 +15,9 @@ export type VSCodeExecutable = Executable & { inputs: { path: string; sha256: st
 export function trustedVSCodeLocation(file: string, home = os.homedir(), platform = process.platform, cwd = process.cwd()) {
   if (platform !== 'win32') return false
   const paths = path.win32, resolved = paths.resolve(file).toLowerCase()
-  if (!paths.isAbsolute(file) || paths.basename(file).toLowerCase() !== 'code.exe' || resolved.startsWith(paths.resolve(cwd).toLowerCase() + paths.sep)) return false
+  const workspace = paths.resolve(cwd).toLowerCase(), relative = paths.relative(workspace, resolved)
+  const inWorkspace = relative === '' || (relative !== '..' && !relative.startsWith('..' + paths.sep) && !paths.isAbsolute(relative))
+  if (!paths.isAbsolute(file) || paths.basename(file).toLowerCase() !== 'code.exe' || (inWorkspace && workspace !== paths.resolve(home).toLowerCase())) return false
   return [paths.join(home, 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
     paths.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe')].some(candidate => paths.resolve(candidate).toLowerCase() === resolved)
 }

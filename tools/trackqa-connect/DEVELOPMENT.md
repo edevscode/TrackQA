@@ -343,6 +343,11 @@ when the shell starts in the user home. Configuration inside a coding workspace
 or the connector package remains rejected, including resolved redirects into
 those directories. Custom workspace-local roots are not exempted. Location
 resolution is read-only and happens before authentication or configuration writes.
+The v0.1.3 correction also allows known user-installed executables and Gemini's
+default home when launched from the home shell. It does not trust arbitrary home
+executables or workspace-local overrides. Gemini detection checks both legacy
+`dist/index.js` and bundled `bundle/gemini.js` npm layouts against package metadata
+and the existing compatibility probes before use.
 
 ## Claude Code adapter — Phase 2C (experimental; authenticated acceptance blocked)
 

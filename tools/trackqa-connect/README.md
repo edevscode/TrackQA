@@ -7,18 +7,19 @@ credentials. The connector does not install or authenticate the AI client itself
 
 ## Package status and installation
 
-**trackqa@0.1.2** was published and independently verified on November 5, 2026.
-This patch fixes Codex launches from the Windows user home:
-the standard profile and application-data directories are no longer incorrectly
-rejected as workspace-local configuration. Workspace and package boundaries
-remain enforced. Public installation, client selection and home-directory path
-checks passed; the published tarball matches the approved artifact.
-The published v0.1.0 and v0.1.1 artifacts are retained unchanged.
+**trackqa@0.1.3** was published and independently verified on November 5, 2026.
+This patch corrects home-directory executable checks and Gemini's default
+home validation, and recognizes Gemini's bundled npm entry alongside its older
+layout. Existing installation allowlists, workspace boundaries and compatibility
+checks remain enforced. The public package reached the Google Owner sign-in
+confirmation from the Windows user home with Codex detected; sign-in was declined
+and the CLI exited normally. Earlier published artifacts are retained unchanged;
+experimental client validation limits are unchanged.
 
 To verify an approved local tarball in a disposable directory:
 
 ```powershell
-npm install --ignore-scripts --no-audit --no-fund <absolute-path-to-trackqa-0.1.2.tgz>
+npm install --ignore-scripts --no-audit --no-fund <absolute-path-to-trackqa-0.1.3.tgz>
 npm exec --offline -- trackqa --help
 ```
 
@@ -32,9 +33,8 @@ npx trackqa status --client codex
 npx trackqa disconnect --client codex --project <project-UUID>
 ```
 
-The registry's latest version is v0.1.2. To request this version explicitly, run
-`npx trackqa@0.1.2 connect`. It supports launching from the user home with the
-default Codex profile and application-data directories.
+The registry's latest version is v0.1.3. To request this version explicitly, run
+`npx trackqa@0.1.3 connect --client codex`.
 Bare `connect` prompts for a client; `--client codex` is optional. No client is
 selected by default.
 

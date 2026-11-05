@@ -24,7 +24,9 @@ export function trustedGeminiLocation(file: string, home = os.homedir(), platfor
   if (!paths.isAbsolute(file)) return false
   const normalized = paths.resolve(file).toLowerCase()
   const inside = (root: string) => normalized.startsWith(paths.resolve(root).toLowerCase() + paths.sep)
-  if (inside(cwd) || normalized === paths.resolve(cwd).toLowerCase()) return false
+  const workspace = paths.resolve(cwd).toLowerCase(), relative = paths.relative(workspace, normalized)
+  const inWorkspace = relative === '' || (relative !== '..' && !relative.startsWith('..' + paths.sep) && !paths.isAbsolute(relative))
+  if (inWorkspace && workspace !== paths.resolve(home).toLowerCase()) return false
   const roots = platform === 'win32' ? [paths.join(home, 'AppData', 'Roaming', 'npm', 'node_modules', '@google', 'gemini-cli'),
     paths.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'nodejs', 'node_modules', '@google', 'gemini-cli')]
     : ['/usr/local/lib/node_modules/@google/gemini-cli', '/usr/lib/node_modules/@google/gemini-cli']
@@ -166,7 +168,8 @@ export async function probeGemini(exe: GeminiExecutable, run: Run = capture): Pr
 
 export async function detectGemini(explicit?: string, source = process.env, run: Run = capture, inspect = checkGeminiInstallation) {
   const prefixes = [...new Set([...(source.PATH ?? '').split(path.delimiter), source.APPDATA ? path.join(source.APPDATA, 'npm') : '', path.join(source.ProgramFiles ?? 'C:\\Program Files', 'nodejs')])].filter(folder => path.isAbsolute(folder))
-  const candidates = explicit ? [explicit] : prefixes.map(folder => path.join(folder, 'node_modules', '@google', 'gemini-cli', 'dist', 'index.js'))
+  const candidates = explicit ? [explicit] : prefixes.flatMap(folder => ['dist/index.js', 'bundle/gemini.js']
+    .map(bin => path.join(folder, 'node_modules', '@google', 'gemini-cli', bin)))
   let incompatible = false
   for (const file of candidates) {
     let exe: GeminiExecutable

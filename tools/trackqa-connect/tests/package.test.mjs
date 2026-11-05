@@ -20,7 +20,7 @@ async function temporary(t){
 }
 
 test('publishable trackqa candidate preserves its identity and executable without the private flag',()=>{
-  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.2');assert.equal(Object.hasOwn(manifest,'private'),false)
+  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.3');assert.equal(Object.hasOwn(manifest,'private'),false)
   assert.deepEqual(manifest.bin,{trackqa:'dist/tools/trackqa-connect/src/cli.js'})
   assert.deepEqual(manifest.dependencies,{'@supabase/supabase-js':'2.113.0'})
   assert.equal(manifest.engines.node,'>=22.19.0')
@@ -60,7 +60,7 @@ test('packaged hosted configuration resolves in an empty environment without che
   assert.equal(`https://${claims.ref}.supabase.co`, SUPABASE_URL)
   await assert.rejects(publicKey({ TRACKQA_PUBLIC_KEY: 'sb_secret_synthetic' }))
   const cli = await readFile(entry, 'utf8')
-  assert.match(cli, /TrackQA Connect 0\.1\.2/)
+  assert.match(cli, /TrackQA Connect 0\.1\.3/)
   assert.match(cli, /no TRACKQA_PUBLIC_KEY setup is required/)
 })
 
@@ -83,6 +83,12 @@ test('packaged location resolution accepts default profile and recovery roots fr
   })
   assert.equal(result.status, 0)
   assert.deepEqual(JSON.parse(result.stdout), { codexHome: path.join(home, '.codex'), recoveryRoot: path.join(data, 'TrackQA-Connect') })
+  const geminiScript = `const { locations } = await import(${JSON.stringify(module)}); const paths = await locations(process.env, 'gemini'); console.log(JSON.stringify({ geminiHome: paths.geminiHome, recoveryRoot: paths.store.root }));`
+  const gemini = spawnSync(process.execPath, ['--input-type=module', '-e', geminiScript], {
+    cwd: home, encoding: 'utf8', env: { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, HOME: home, USERPROFILE: home, LOCALAPPDATA: data, XDG_STATE_HOME: data },
+  })
+  assert.equal(gemini.status, 0)
+  assert.deepEqual(JSON.parse(gemini.stdout), { geminiHome: home, recoveryRoot: path.join(data, 'TrackQA-Connect') })
   assert.deepEqual(await readdir(path.join(home, '.codex')), [])
   assert.deepEqual(await readdir(data), [], 'Path checks must not create locks, authentication or recovery state')
 })

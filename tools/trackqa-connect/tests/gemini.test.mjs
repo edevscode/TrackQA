@@ -67,6 +67,19 @@ test('missing Gemini is reported without invoking any process or installing soft
   await assert.rejects(detectGemini(undefined,{PATH:''},async()=>{ran=true;return ''},async()=>{throw new Error('missing')}),e=>e.code==='client_not_found')
   assert.equal(ran,false)
 })
+
+test('Gemini detects the bundled npm entry as well as the legacy dist layout through existing validation and probes', async t => {
+  const f = await fixture(t), prefix = path.join(f.root, 'npm'), candidates = []
+  const bundled = path.join(prefix, 'node_modules', '@google', 'gemini-cli', 'bundle', 'gemini.js')
+  const detected = await detectGemini(undefined, { PATH: prefix }, f.run, async file => {
+    candidates.push(file)
+    if (file !== bundled) throw new Error('Not installed')
+    return f.exe
+  })
+  assert.deepEqual(candidates, [path.join(prefix, 'node_modules', '@google', 'gemini-cli', 'dist', 'index.js'), bundled])
+  assert.equal(detected.path, f.exe.path)
+  assert.equal(detected.capabilities.rawEditorPreservesUnrelated, true)
+})
 test('installed Gemini native compatibility (opt-in, isolated settings, no hosted requests)',{
   skip:!process.env.TRACKQA_NATIVE_GEMINI,
 },async()=>{

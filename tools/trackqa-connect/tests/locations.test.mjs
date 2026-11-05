@@ -4,12 +4,41 @@ import { mkdtemp, mkdir, realpath, rm, symlink } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { isSafeConfigurationRoot } from '../src/cli.ts'
+import { trustedLocation } from '../src/clients/codex.ts'
+import { trustedClaudeLocation } from '../src/clients/claude.ts'
+import { trustedGeminiLocation } from '../src/clients/gemini.ts'
+import { trustedVSCodeLocation } from '../src/clients/vscode.ts'
 
 const home = path.resolve(os.tmpdir(), 'trackqa-location-home')
 const repo = path.resolve(os.tmpdir(), 'trackqa-location-package')
 const profile = path.join(home, '.codex')
 const data = path.join(home, 'AppData', 'Local')
 const workspace = path.join(home, 'projects', 'example')
+
+for (const [client, check, suffix] of [
+  ['codex', trustedLocation, '.antigravity-ide/extensions/openai.chatgpt-1.0/bin/windows-x86_64/codex.exe'],
+  ['claude', trustedClaudeLocation, '.local/bin/claude.exe'],
+  ['gemini', trustedGeminiLocation, 'AppData/Roaming/npm/node_modules/@google/gemini-cli/dist/index.js'],
+  ['vscode', trustedVSCodeLocation, 'AppData/Local/Programs/Microsoft VS Code/Code.exe'],
+]) test(`${client} detects trusted user installations from home while preserving workspace and executable boundaries`, () => {
+  const user = 'C:\\Users\\owner', executable = path.win32.join(user, suffix)
+  assert.equal(check(executable, user, 'win32', user), true)
+  assert.equal(check(executable, user, 'win32', user.toUpperCase() + '\\'), true)
+  assert.equal(check(executable, user, 'win32', user + '\\project'), true)
+  assert.equal(check(executable, user, 'win32', path.win32.dirname(executable)), false)
+  assert.equal(check(executable, user, 'win32', 'C:\\'), false)
+  for (const file of [path.win32.join(user, 'Downloads', path.win32.basename(executable)),
+    path.win32.join(user, 'project', path.win32.basename(executable)), '.\\' + path.win32.basename(executable)]) {
+    assert.equal(check(file, user, 'win32', user), false)
+  }
+})
+
+test('default Gemini home is allowed from the home shell without exempting workspace overrides', () => {
+  assert.equal(isSafeConfigurationRoot(home, home, repo, home, home), true)
+  assert.equal(isSafeConfigurationRoot(path.join(home, 'custom'), home, repo, home, home), false)
+  assert.equal(isSafeConfigurationRoot(workspace, workspace, repo, home, home), false)
+  assert.equal(isSafeConfigurationRoot(home, home, home, home, home), false)
+})
 
 test('launching from home permits only the exact default Codex and recovery roots', () => {
   assert.equal(isSafeConfigurationRoot(profile, home, repo, home, profile), true)
