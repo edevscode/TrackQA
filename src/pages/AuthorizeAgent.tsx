@@ -138,27 +138,32 @@ export default function AuthorizeAgent() {
 
   if (!isValidPort || !isValidState) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-container-lowest p-4">
-        <div className="w-full max-w-md rounded-xl border border-outline-variant bg-surface p-6 shadow-sm">
-          <div className="flex items-center gap-3 text-error">
-            <AlertCircle className="h-6 w-6 shrink-0" />
-            <h2 className="text-title-md font-semibold text-on-surface">Invalid Setup Request</h2>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-surface px-md py-lg sm:py-xl">
+        <div className="w-full max-w-[480px]">
+          <div className="mb-lg flex justify-center">
+            <TrackQALogo size="md" />
           </div>
-          <p className="mt-3 text-body-sm text-on-surface-variant">
-            This setup session is missing a valid loopback port or state token. Please run{' '}
-            <code className="rounded bg-surface-container-high px-1 py-0.5 font-mono text-body-xs font-semibold">
-              npx trackqa setup
-            </code>{' '}
-            from your terminal.
-          </p>
-          <div className="mt-6 flex justify-end">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard')}
-              className="rounded-lg bg-surface-container-high px-4 py-2 text-label-md font-medium text-on-surface hover:bg-surface-container-highest transition-colors"
-            >
-              Go to Dashboard
-            </button>
+          <div className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm sm:p-xl">
+            <div className="flex items-center gap-sm text-error">
+              <AlertCircle className="h-6 w-6 shrink-0" />
+              <h2 className="text-title-md font-semibold text-on-surface">Invalid Setup Request</h2>
+            </div>
+            <p className="mt-md text-body-sm text-on-surface-variant">
+              This setup session is missing a valid loopback port or state token. Please run{' '}
+              <code className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-code-xs font-semibold">
+                npx trackqa setup
+              </code>{' '}
+              from your terminal.
+            </p>
+            <div className="mt-lg flex justify-end">
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                className="rounded-lg bg-surface-container-high px-md py-sm text-sm font-semibold text-on-surface hover:bg-surface-container-highest transition-colors"
+              >
+                Go to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -166,116 +171,123 @@ export default function AuthorizeAgent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-surface-container-lowest p-4 sm:p-6">
-      <div className="mb-6">
-        <TrackQALogo />
-      </div>
-
-      <div className="w-full max-w-md rounded-2xl border border-outline-variant bg-surface p-6 shadow-md sm:p-8">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-container text-on-primary-container">
-            <Bot className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-title-lg font-bold text-on-surface">Authorize AI Assistant</h1>
-            <p className="text-body-xs text-on-surface-variant">TrackQA MCP Auto-Setup</p>
-          </div>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-surface px-md py-lg sm:py-xl">
+      <div className="w-full max-w-[480px]">
+        {/* TrackQA Official Branding */}
+        <div className="mb-lg flex justify-center">
+          <TrackQALogo size="md" />
         </div>
 
-        {authorized ? (
-          <div className="mt-6 text-center py-4">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <CheckCircle2 className="h-6 w-6" />
+        {/* Main Authorization Card */}
+        <div className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm sm:p-xl">
+          <div className="flex items-center gap-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Bot className="h-5 w-5" />
             </div>
-            <h3 className="mt-3 text-title-md font-semibold text-on-surface">Authorized!</h3>
-            <p className="mt-1 text-body-sm text-on-surface-variant">
-              Returning to your terminal to configure your AI assistants…
-            </p>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-on-surface sm:text-2xl">
+                Connect AI Agent
+              </h1>
+              <p className="text-body-xs text-on-surface-variant">
+                MCP Assistant Authorization
+              </p>
+            </div>
           </div>
-        ) : (
-          <>
-            <p className="mt-4 text-body-sm text-on-surface-variant">
-              An AI coding assistant setup on your machine is requesting access to inspect issues and submit findings.
-            </p>
 
-            {error && (
-              <div className="mt-4 rounded-lg bg-error-container/40 p-3 text-body-sm text-on-error-container">
-                {error}
+          {authorized ? (
+            <div className="mt-md text-center py-md">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <CheckCircle2 className="h-6 w-6" />
               </div>
-            )}
+              <h3 className="mt-md text-title-md font-semibold text-on-surface">Authorized!</h3>
+              <p className="mt-xs text-body-sm text-on-surface-variant">
+                Returning to your terminal to configure your AI assistants…
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="mt-md text-body-md text-on-surface-variant">
+                An AI coding assistant on your machine is requesting access to inspect issues and file findings for QA review.
+              </p>
 
-            {loading ? (
-              <div className="mt-6 flex items-center justify-center py-8 text-body-md text-on-surface-variant">
-                Loading projects…
-              </div>
-            ) : projects.length === 0 ? (
-              <div className="mt-6 rounded-lg bg-surface-container-high p-4 text-center">
-                <AlertCircle className="mx-auto h-6 w-6 text-on-surface-variant" />
-                <p className="mt-2 text-body-sm font-medium text-on-surface">No Eligible Projects Found</p>
-                <p className="mt-1 text-body-xs text-on-surface-variant">
-                  You must be an Owner of at least one active project to authorize AI assistants.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="mt-4 rounded-lg bg-primary px-4 py-2 text-label-md font-medium text-on-primary"
-                >
-                  Return to Dashboard
-                </button>
-              </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                <div>
-                  <label htmlFor="project-select" className="block text-label-md font-medium text-on-surface">
-                    Select TrackQA Project
-                  </label>
-                  <select
-                    id="project-select"
-                    value={selectedProjectId}
-                    onChange={e => setSelectedProjectId(e.target.value)}
-                    disabled={authorizing}
-                    className="mt-1.5 block w-full rounded-lg border border-outline bg-surface px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {projects.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+              {error && (
+                <div className="mt-md rounded-lg border border-rose-500/30 bg-rose-500/10 p-md text-body-sm text-rose-800 dark:text-rose-300">
+                  {error}
                 </div>
+              )}
 
-                <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3.5">
-                  <div className="flex items-start gap-2.5">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <div className="text-body-xs text-on-surface-variant">
-                      <span className="font-semibold text-on-surface">Project-Scoped Security:</span> Access is strictly restricted to issues in{' '}
-                      <span className="font-medium text-on-surface">{selectedProject?.name}</span>. The assistant cannot access other projects or your private account credentials.
-                    </div>
-                  </div>
+              {loading ? (
+                <div className="mt-lg flex items-center justify-center py-xl text-body-md text-on-surface-variant">
+                  Loading projects…
                 </div>
-
-                <div className="mt-6 flex items-center justify-end gap-3 pt-2">
+              ) : projects.length === 0 ? (
+                <div className="mt-lg rounded-lg bg-surface-container-high p-md text-center">
+                  <AlertCircle className="mx-auto h-6 w-6 text-on-surface-variant" />
+                  <p className="mt-sm text-body-sm font-medium text-on-surface">No Eligible Projects Found</p>
+                  <p className="mt-xs text-body-xs text-on-surface-variant">
+                    You must be an Owner of at least one active project to authorize AI assistants.
+                  </p>
                   <button
                     type="button"
                     onClick={handleCancel}
-                    disabled={authorizing}
-                    className="rounded-lg border border-outline px-4 py-2 text-label-md font-medium text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                    className="mt-md rounded-lg bg-primary px-md py-sm text-sm font-semibold text-on-primary hover:bg-primary-container transition-colors"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAuthorize}
-                    disabled={authorizing || !selectedProject}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-label-md font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
-                  >
-                    {authorizing ? 'Authorizing…' : 'Authorize & Connect'}
+                    Return to Dashboard
                   </button>
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              ) : (
+                <div className="mt-lg flex flex-col gap-md">
+                  <div>
+                    <label htmlFor="project-select" className="mb-1.5 block text-label-md font-semibold text-on-surface">
+                      Project
+                    </label>
+                    <select
+                      id="project-select"
+                      value={selectedProjectId}
+                      onChange={e => setSelectedProjectId(e.target.value)}
+                      disabled={authorizing}
+                      className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3.5 py-2.5 text-body-md text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all disabled:opacity-50"
+                    >
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="rounded-lg border border-outline-variant bg-surface p-md">
+                    <div className="flex items-start gap-sm">
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <p className="text-body-xs text-on-surface-variant">
+                        <span className="font-semibold text-on-surface">Project-scoped:</span> Access is strictly limited to issues in <span className="font-medium text-on-surface">{selectedProject?.name}</span>. The assistant cannot access other projects or your account credentials.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-sm flex items-center justify-end gap-sm pt-xs">
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      disabled={authorizing}
+                      className="rounded-lg border border-outline-variant px-md py-sm text-sm font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAuthorize}
+                      disabled={authorizing || !selectedProject}
+                      className="rounded-lg bg-primary px-lg py-sm text-sm font-semibold text-on-primary hover:bg-primary-container transition-colors disabled:opacity-50"
+                    >
+                      {authorizing ? 'Authorizing…' : 'Authorize Connection'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
