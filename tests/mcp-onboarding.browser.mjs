@@ -1,82 +1,93 @@
-// Local browser regression checks. Uses an existing Playwright installation; no hosted calls.
-// Start Vite preview on 127.0.0.1:4173, set PLAYWRIGHT_MODULE to its existing module, then run this file.
+// Local rendered regression checks. All backend traffic is mocked; no hosted calls.
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 
-const modulePath = process.env.PLAYWRIGHT_MODULE
-if (!modulePath) throw new Error('Set PLAYWRIGHT_MODULE to an existing Playwright module; do not install dependencies.')
-const { chromium } = await import(pathToFileURL(modulePath).href)
-const origin = 'http://127.0.0.1:4173'
+if (!process.env.PLAYWRIGHT_MODULE) throw new Error('Use an existing PLAYWRIGHT_MODULE; do not install dependencies.')
+const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
+const origin = process.env.MCP_UI_ORIGIN || 'http://127.0.0.1:4173'
 const PROJECT = '11111111-1111-4111-8111-111111111111'
 const USER = '33333333-3333-4333-8333-333333333333'
 const CONNECTION = '44444444-4444-4444-8444-444444444444'
-const TOKEN = 'tqm_' + 'a'.repeat(64) // Synthetic fixture only.
 let browser
 before(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true }) })
 after(async () => { await browser?.close() })
 
-function syntheticConnection() {
-  return { id: CONNECTION, project_id: PROJECT, user_id: USER, approved_by: USER, client_label: 'Synthetic device', token_expires_at: '2030-01-01', created_at: '2026-01-01', updated_at: '2026-01-01', revoked_at: null }
+function connection(change = {}) {
+  return { id: CONNECTION, project_id: PROJECT, user_id: USER, approved_by: USER, client_label: 'Synthetic Codex', token_expires_at: '2030-01-01', created_at: '2026-01-01', updated_at: '2026-01-01', revoked_at: null, ...change }
 }
 
-async function fixture(t, { role = 'OWNER', enabled = false, failIssue = false, width = 1280, archived = false, connections = [], verifyMode = 'confirmed', failRevoke = false, failLoad = false, delayLoad = 0 } = {}) {
+async function fixture(t, options = {}) {
+  const { role = 'OWNER', enabled = false, width = 1280, archived = false, connections = [], verifyMode = 'confirmed', failRevoke = false, failEnable = false, failLoad = false, delayLoad = 0, lookupDelay = 0, ignoreFilters = false } = options
   const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' })
   t.after(() => context.close())
-  context.setDefaultTimeout(7000)
   await context.routeWebSocket('**/*', socket => socket.close())
-  const state = { enabled, issued: 0, revoked: 0, connections, mutations: [], lookups: [], verifyMode }
-  // Owner membership, not the project's original creator, grants revocation.
+  const state = { enabled, connections, verifyMode, failLoad, revoked: 0, mutations: [], lookups: [], listQueries: [], unexpected: [], errors: [] }
   const project = () => ({ id: PROJECT, name: 'Synthetic onboarding', key: 'MOCK', owner_id: archived ? '55555555-5555-4555-8555-555555555555' : USER, description: '', archived, mcp_enabled: state.enabled, created_at: '2026-01-01', updated_at: '2026-01-01', timezone: 'UTC', issue_seq: 0 })
+  const headers = { 'access-control-allow-origin': origin }
   await context.route('**/*', async route => {
-    const request = route.request(), url = new URL(request.url())
+    const request = route.request(), url = new URL(request.url()), method = request.method()
     if (url.origin === origin) return route.continue()
-    // Deny all external traffic except fully mocked Supabase responses.
-    if (!url.hostname.endsWith('.supabase.co')) return route.abort()
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': origin, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } })
+    if (url.hostname !== 'mzeuimqfrswrwoaqjdmp.supabase.co') return route.abort()
+    if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...headers, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } })
     let data = []
-    if (request.method() !== 'GET' && /\/(projects|issue_mcp_connection_token|revoke_mcp_connection)$/.test(url.pathname)) state.mutations.push(url.pathname.split('/').pop())
-    if (url.pathname === '/auth/v1/user') data = { id: USER, email: 'owner@example.invalid' }
+    if (method === 'HEAD') return route.fulfill({ status: 200, body: '', headers: { ...headers, 'content-range': '*/0', 'access-control-expose-headers': 'content-range' } })
+    if (method === 'PATCH' && url.pathname.endsWith('/projects')) {
+      state.mutations.push('projects')
+      assert.equal(role, 'OWNER')
+      assert.equal(archived, false)
+      assert.equal(url.searchParams.get('id'), 'eq.' + PROJECT)
+      assert.deepEqual(Object.keys(request.postDataJSON()), ['mcp_enabled'])
+      if (failEnable) return route.fulfill({ status: 500, json: { message: 'Synthetic private error' }, headers })
+      state.enabled = request.postDataJSON().mcp_enabled
+      data = { id: PROJECT, mcp_enabled: state.enabled }
+    } else if (method === 'POST' && url.pathname.endsWith('/revoke_mcp_connection')) {
+      state.mutations.push('revoke_mcp_connection')
+      state.revoked++
+      assert.equal(role, 'OWNER')
+      const id = request.postDataJSON().p_connection_id
+      assert.deepEqual(Object.keys(request.postDataJSON()), ['p_connection_id'])
+      if (failRevoke) return route.fulfill({ status: 500, json: { message: 'Synthetic private error' }, headers })
+      const row = state.connections.find(row => row.id === id)
+      assert.ok(row)
+      row.revoked_at = '2026-01-02'
+      data = null
+    } else if (method !== 'GET') {
+      state.unexpected.push(url.pathname)
+      return route.abort()
+    } else if (url.pathname === '/auth/v1/user') data = { id: USER, email: 'owner@example.invalid' }
     else if (url.pathname.endsWith('/profiles')) data = { id: USER, email: 'owner@example.invalid', full_name: 'Synthetic Owner', avatar_url: null }
     else if (url.pathname.endsWith('/project_members')) data = url.searchParams.get('select')?.includes('project:projects')
       ? [{ project_id: PROJECT, role, project: project() }]
       : [{ user_id: USER, role, profiles: { full_name: 'Synthetic Owner', email: 'owner@example.invalid', avatar_url: null } }]
-    else if (url.pathname.endsWith('/projects')) {
-      if (request.method() === 'PATCH') state.enabled = request.postDataJSON().mcp_enabled
-      data = project()
-    } else if (url.pathname.endsWith('/mcp_connections')) {
-      if (delayLoad) await new Promise(resolve => setTimeout(resolve, delayLoad))
+    else if (url.pathname.endsWith('/projects')) data = project()
+    else if (url.pathname.endsWith('/notification_preferences')) data = null
+    else if (url.pathname.endsWith('/mcp_connections')) {
       const id = url.searchParams.get('id')
       if (id) {
         state.lookups.push({ id, project: url.searchParams.get('project_id'), select: url.searchParams.get('select') })
-        if (state.verifyMode === 'error') return route.fulfill({ status: 500, json: { message: 'Synthetic verification failure' }, headers: { 'access-control-allow-origin': origin } })
-        data = state.connections.filter(row => `eq.${row.id}` === id).map(row => state.verifyMode === 'unrevoked' ? { ...row, revoked_at: null } : row)
+        if (lookupDelay) await new Promise(resolve => setTimeout(resolve, lookupDelay))
+        if (state.verifyMode === 'error') return route.fulfill({ status: 500, json: { message: 'Synthetic private verification error' }, headers })
+        data = state.connections.filter(row => 'eq.' + row.id === id).map(row => state.verifyMode === 'unrevoked' ? { ...row, revoked_at: null } : row)
         if (state.verifyMode === 'missing') data = []
         if (state.verifyMode === 'foreign') data = data.map(row => ({ ...row, project_id: '22222222-2222-4222-8222-222222222222' }))
+        data = data[0] ?? null
       } else {
-        if (failLoad) return route.fulfill({ status: 500, json: { message: 'Synthetic load failure' }, headers: { 'access-control-allow-origin': origin } })
-        data = state.connections
+        state.listQueries.push(Object.fromEntries(url.searchParams))
+        if (delayLoad) await new Promise(resolve => setTimeout(resolve, delayLoad))
+        if (state.failLoad) return route.fulfill({ status: 500, json: { message: 'Synthetic private load error' }, headers })
+        let rows = state.connections
+        if (!ignoreFilters) {
+          assert.equal(url.searchParams.get('revoked_at'), 'is.null')
+          assert.match(url.searchParams.get('token_expires_at'), /^gt\./)
+          rows = rows.filter(row => row.revoked_at === null && row.user_id && row.approved_by && Date.parse(row.token_expires_at) > Date.parse(url.searchParams.get('token_expires_at').slice(3)))
+        }
+        const offset = Number(url.searchParams.get('offset') ?? 0), limit = Number(url.searchParams.get('limit') ?? 11)
+        data = rows.slice(offset, offset + limit)
       }
     }
-    else if (url.pathname.endsWith('/issue_mcp_connection_token')) {
-      assert.equal(role, 'OWNER')
-      assert.equal(state.enabled, true)
-      state.issued++
-      if (failIssue) return route.fulfill({ status: 500, json: { message: 'Synthetic failure; never show raw diagnostics' }, headers: { 'access-control-allow-origin': origin } })
-      const args = request.postDataJSON()
-      assert.equal(args.p_project_id, PROJECT)
-      assert.equal(args.p_user_id, USER)
-      state.connections.push({ id: CONNECTION, project_id: PROJECT, user_id: USER, approved_by: USER, client_label: args.p_client_label, token_expires_at: '2030-01-01', created_at: '2026-01-01', updated_at: '2026-01-01', revoked_at: null })
-      data = [{ connection_id: CONNECTION, access_token: TOKEN }]
-    } else if (url.pathname.endsWith('/revoke_mcp_connection')) {
-      assert.equal(role, 'OWNER')
-      state.revoked++
-      if (failRevoke) return route.fulfill({ status: 500, json: { message: 'Synthetic revoke failure' }, headers: { 'access-control-allow-origin': origin } })
-      state.connections[0].revoked_at = '2026-01-02'
-      data = null
-    }
-    await route.fulfill({ json: data, headers: { 'access-control-allow-origin': origin } })
+    return route.fulfill({ json: data, headers })
   })
   await context.addInitScript(({ USER, PROJECT }) => {
     localStorage.setItem('sb-mzeuimqfrswrwoaqjdmp-auth-token', JSON.stringify({ access_token: 'synthetic-auth-fixture', refresh_token: 'synthetic-refresh-fixture', token_type: 'bearer', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: USER, email: 'owner@example.invalid', aud: 'authenticated', role: 'authenticated' } }))
@@ -85,260 +96,168 @@ async function fixture(t, { role = 'OWNER', enabled = false, failIssue = false, 
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async value => { window.__copies.push(value) } } })
   }, { USER, PROJECT })
   const page = await context.newPage()
-  await page.goto(`${origin}/${archived ? 'projects/archived' : 'project-settings'}`)
+  page.setDefaultTimeout(7000)
+  page.on('pageerror', error => state.errors.push(error.message))
+  await page.goto(origin + (archived ? '/projects/archived' : '/project-settings'))
   if (archived) await page.getByText('Manage Connections · MOCK', { exact: true }).click()
-  else await page.getByRole('heading', { name: 'AI Integrations', exact: true }).waitFor()
-  if (!failLoad && !delayLoad) await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.getAttribute('aria-label') === 'Refresh integration status' && !button.disabled))
-  return { page, state }
-}
-async function prepare(page, client = 'Codex CLI') {
-  const advanced = page.locator('details').filter({ has: page.locator('summary', { hasText: /^Advanced \/ Manual Setup$/ }) })
-  if (!await advanced.evaluate(element => element.open)) await advanced.locator('summary').click()
-  await page.getByRole('button', { name: 'Open manual setup', exact: true }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByRole('radio', { name: new RegExp(client) }).check()
-  await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-  return dialog
-}
-async function issue(page, dialog, state) {
-  if (!state.enabled) await dialog.getByRole('button', { name: 'Enable project access', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Approve & show token' }).waitFor()
-  await dialog.getByRole('checkbox').check()
-  await dialog.getByRole('button', { name: 'Approve & show token' }).click()
-  await dialog.getByRole('textbox', { name: 'One-time MCP token' }).waitFor()
-}
-
-test('minimal overview, client selection, Back navigation and collapsed technical details', async t => {
-  const { page, state } = await fixture(t)
-  assert.equal(await page.locator('pre:visible').count(), 1)
-  await page.getByRole('button', { name: 'Copy connector command', exact: true }).click()
-  assert.equal(await page.evaluate(() => window.__copies.pop()), 'npx trackqa connect')
-  assert.equal(state.mutations.length, 0)
-  assert.equal(await page.getByText('Manage Connections', { exact: true }).count(), 1)
-  assert.equal(await page.getByRole('button', { name: 'Revoke', exact: true }).count(), 0)
-  const dialog = await prepare(page, 'Claude Code')
-  assert.equal(await dialog.locator('pre:visible').count(), 0)
-  await dialog.getByRole('button', { name: 'Copy configuration', exact: true }).click()
-  let copies = await page.evaluate(() => window.__copies)
-  assert.match(copies[0], /\$\{TRACKQA_MCP_/)
-  assert.ok(!copies[0].includes(TOKEN))
-  await dialog.getByRole('button', { name: 'Back', exact: true }).click()
-  assert.equal(await dialog.getByRole('radio', { name: 'Claude Code (experimental)' }).isChecked(), true)
-  await dialog.getByRole('radio', { name: /Codex CLI/ }).check()
-  await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Copy configuration', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Copy secure launcher', exact: true }).click()
-  copies = await page.evaluate(() => window.__copies)
-  assert.match(copies[1], /bearer_token_env_var/)
-  assert.match(copies[2], /Read-Host .* -AsSecureString/)
-  assert.ok(copies.every(value => !value.includes(TOKEN)))
-  assert.equal(state.issued, 0)
-  await dialog.getByRole('button', { name: 'Back', exact: true }).click()
-  await dialog.getByRole('radio', { name: /Other MCP client/ }).check()
-  await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Copy endpoint', exact: true }).waitFor()
-  assert.equal(await dialog.getByRole('button', { name: 'Copy secure launcher', exact: true }).count(), 0)
-})
-
-test('Owner approval issues once, copies only explicitly, discards token before verification and supports revocation', async t => {
-  const { page, state } = await fixture(t)
-  const dialog = await prepare(page)
-  await dialog.getByRole('button', { name: 'Enable project access', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Approve & show token' }).waitFor()
-  assert.equal(await dialog.getByRole('button', { name: 'Approve & show token' }).isDisabled(), true)
-  await issue(page, dialog, state)
-  assert.equal(state.issued, 1)
-  assert.equal(await page.evaluate(() => window.__copies.length), 0)
-  await dialog.getByRole('button', { name: 'Copy token', exact: true }).click()
-  assert.equal(await page.evaluate(token => window.__copies[0] === token, TOKEN), true)
-  await dialog.getByRole('button', { name: 'Continue to verification' }).click()
-  assert.equal(await dialog.getByRole('textbox', { name: 'One-time MCP token' }).count(), 0)
-  await dialog.getByText('Verify in your client', { exact: true }).waitFor()
-  assert.equal(await dialog.getByRole('button', { name: 'Back', exact: true }).count(), 0)
-  assert.equal(await dialog.locator('code:visible').count(), 0)
-  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
-  assert.equal(await page.getByText('Connected', { exact: true }).count(), 0)
-  assert.equal(await page.evaluate(token => JSON.stringify(localStorage).includes(token) || JSON.stringify(sessionStorage).includes(token) || location.href.includes(token), TOKEN), false)
-  await page.getByText('Manage Connections', { exact: true }).click()
-  await page.getByRole('button', { name: 'Revoke', exact: true }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Revoke connection', exact: true }).click()
-  await page.getByText(/Connection revoked/).waitFor()
-  assert.equal(state.revoked, 1)
-})
-
-test('closing the wizard removes its one-time token and reopening cannot reveal it again', async t => {
-  const { page, state } = await fixture(t, { enabled: true })
-  const dialog = await prepare(page)
-  await issue(page, dialog, state)
-  await dialog.getByRole('button', { name: 'Close setup' }).click()
-  await prepare(page)
-  assert.equal(await page.getByRole('textbox', { name: 'One-time MCP token' }).count(), 0)
-  assert.equal(state.issued, 1)
-})
-
-test('tab hiding clears one-time display without implicitly revoking or issuing again', async t => {
-  const { page, state } = await fixture(t, { enabled: true })
-  const dialog = await prepare(page)
-  await issue(page, dialog, state)
-  await page.evaluate(() => {
-    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
-    document.dispatchEvent(new Event('visibilitychange'))
+  const panel = page.getByRole('heading', { name: archived ? 'Synthetic onboarding · Connections' : 'AI Integrations', exact: true }).locator('xpath=ancestor::section[1]')
+  await panel.waitFor()
+  if (!delayLoad) await panel.getByText('Loading connections…', { exact: true }).waitFor({ state: 'hidden' })
+  t.after(() => {
+    assert.deepEqual(state.unexpected, [], 'No issuance or unrelated mutation can be invoked')
+    assert.deepEqual(state.errors, [], 'No page runtime errors')
   })
-  await dialog.getByText(/The one-time display has ended/).waitFor({ state: 'attached' })
-  assert.equal(await dialog.getByRole('textbox', { name: 'One-time MCP token' }).count(), 0)
-  assert.equal(state.issued, 1)
-  assert.equal(state.revoked, 0)
-})
-
-test('non-Owner cannot enable or issue; enabled access supports an externally Owner-issued token', async t => {
-  const { page, state } = await fixture(t, { role: 'DEVELOPER', enabled: true })
-  const dialog = await prepare(page)
-  assert.equal(await dialog.getByRole('button', { name: /Approve & show|Enable project/ }).count(), 0)
-  await dialog.getByRole('checkbox').check()
-  await dialog.getByRole('button', { name: 'Continue with Owner-issued token' }).click()
-  assert.equal(await dialog.getByRole('textbox').count(), 0)
-  await dialog.getByRole('button', { name: 'Continue to verification' }).click()
-  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
-  await page.getByText('Manage Connections', { exact: true }).click()
-  assert.equal(await page.getByRole('button', { name: /Enable project access|Revoke/ }).count(), 0)
-  assert.equal(state.mutations.length, 0)
-})
-
-test('non-Owner cannot proceed when project access is disabled', async t => {
-  const { page, state } = await fixture(t, { role: 'QA' })
-  const dialog = await prepare(page)
-  await dialog.getByRole('checkbox').check()
-  assert.equal(await dialog.getByRole('button', { name: 'Ask an Owner for access' }).isDisabled(), true)
-  assert.equal(state.mutations.length, 0)
-})
-
-test('issuance failure stays in approval, reports a generic error and never retries automatically', async t => {
-  const { page, state } = await fixture(t, { enabled: true, failIssue: true })
-  const dialog = await prepare(page)
-  await dialog.getByRole('checkbox').check()
-  await dialog.getByRole('button', { name: 'Approve & show token' }).click()
-  await dialog.getByRole('alert').waitFor()
-  assert.match(await dialog.getByRole('alert').innerText(), /never automatically retried/)
-  assert.doesNotMatch(await dialog.innerText(), /Synthetic failure/)
-  assert.equal(state.issued, 1)
-  assert.equal(await dialog.getByRole('textbox', { name: 'One-time MCP token' }).count(), 0)
-})
-
-test('mobile wizard fits the viewport and Escape restores focus to manual setup', async t => {
-  const { page } = await fixture(t, { width: 375 })
-  const dialog = await prepare(page)
-  const bounds = await dialog.boundingBox()
-  assert.ok(bounds.width >= 340, 'Mobile dialog must use the available width, not a spacing token')
-  assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 376)
-  assert.ok(bounds.height <= 900)
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-  if (process.env.ONBOARDING_SCREENSHOT) await page.screenshot({ path: process.env.ONBOARDING_SCREENSHOT })
-  await page.keyboard.press('Escape')
-  assert.equal(await dialog.count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Open manual setup', exact: true }).evaluate(button => button === document.activeElement), true)
-})
+  return { page, panel, state }
+}
 
 async function revoke(page) {
-  const summary = page.getByText('Manage Connections', { exact: true })
-  const management = summary.locator('..')
-  if (!await management.evaluate(element => element.open)) await summary.click()
-  await page.getByRole('button', { name: 'Revoke', exact: true }).click()
+  await page.getByRole('button', { name: 'Revoke', exact: true }).first().click()
   await page.getByRole('dialog').getByRole('button', { name: 'Revoke connection', exact: true }).click()
 }
 
-test('revocation succeeds only after an exact project-scoped independent lookup', async t => {
-  const { page, state } = await fixture(t, { connections: [syntheticConnection()] })
-  await revoke(page)
-  await page.getByText(/Connection revoked\. Server verification confirmed/).waitFor()
-  assert.deepEqual(state.lookups, [{ id: `eq.${CONNECTION}`, project: `eq.${PROJECT}`, select: 'id,project_id,revoked_at' }])
-  assert.equal(state.revoked, 1)
-})
-
-for (const verifyMode of ['error', 'missing', 'unrevoked', 'foreign']) test(`ambiguous revocation (${verifyMode}) offers read-only recheck without repeating mutation`, async t => {
-  const { page, state } = await fixture(t, { connections: [syntheticConnection()], verifyMode })
-  await revoke(page)
-  await page.getByText(/Revocation verification is pending/).waitFor()
-  await page.getByText(/Revocation unverified/).waitFor()
-  assert.equal(await page.getByText(/Connection revoked\. Server verification confirmed/).count(), 0)
-  assert.equal(state.revoked, 1)
-  state.verifyMode = 'confirmed'
-  await page.getByRole('button', { name: 'Check revocation', exact: true }).click()
-  await page.getByText(/Connection revoked\. Server verification confirmed/).waitFor()
-  assert.equal(state.revoked, 1)
-})
-
-test('failed revocation reports uncertainty without success or automatic retry', async t => {
-  const { page, state } = await fixture(t, { connections: [syntheticConnection()], failRevoke: true })
-  await revoke(page)
-  await page.getByRole('alert').getByText(/Revocation could not be confirmed/).waitFor()
-  assert.equal(await page.getByText(/Connection revoked\. Server verification confirmed/).count(), 0)
-  assert.equal(state.revoked, 1)
-  assert.equal(state.lookups.length, 0)
-})
-
-test('archived Owner can inspect and revoke without setup, enablement or restoration', async t => {
-  const { page, state } = await fixture(t, { archived: true, enabled: true, connections: [syntheticConnection()] })
-  assert.equal(await page.getByRole('button', { name: /Copy connector|Open manual|Enable project access|Disable project access/ }).count(), 0)
-  await revoke(page)
-  await page.getByText(/Server verification confirmed/).waitFor()
-  assert.deepEqual(state.mutations, ['revoke_mcp_connection'])
-  assert.equal(state.enabled, true)
-  assert.equal(state.issued, 0)
-  assert.match(page.url(), /projects\/archived$/)
-})
-
-test('archived non-Owner sees RLS-visible metadata only and cannot revoke', async t => {
-  const { page, state } = await fixture(t, { archived: true, role: 'DEVELOPER' })
-  await page.getByText(/No connections visible for your account/).waitFor()
-  assert.equal(await page.getByRole('button', { name: /Revoke|Open manual|Enable project access|Disable project access/ }).count(), 0)
+test('minimal page has command/copy, access switch, short instruction and simple empty state only', async t => {
+  const { page, panel, state } = await fixture(t)
+  assert.equal(await panel.getByRole('switch', { name: 'Project MCP access' }).isChecked(), false)
+  assert.equal(await panel.getByText('Disabled', { exact: true }).count(), 1)
+  await panel.getByRole('button', { name: 'Copy connector command' }).click()
+  assert.deepEqual(await page.evaluate(() => window.__copies), ['npx trackqa connect'])
+  assert.equal(await panel.getByText('Follow the CLI prompts to connect.', { exact: true }).count(), 1)
+  assert.equal(await panel.getByText('No active connections.', { exact: true }).count(), 1)
+  assert.equal(await panel.locator('details, pre, [role="dialog"], input[type="text"], input[type="password"]').count(), 0)
+  assert.doesNotMatch(await panel.textContent(), /Requirements|supported clients|Advanced|Manual Setup|TRACKQA_PUBLIC_KEY|VITE_SUPABASE|Windows|Node\.js|5173|MFA|Google|90 days|Expires|recovery|disconnect|Gemini|Claude|Antigravity|experimental|connection ID/i)
   assert.deepEqual(state.mutations, [])
 })
 
-test('integration loading, empty and error states do not claim connectivity or trigger mutation', async t => {
-  const loading = await fixture(t, { delayLoad: 2500 })
-  assert.equal(await loading.page.getByRole('button', { name: 'Open manual setup', exact: true, includeHidden: true }).isDisabled(), true)
-  await loading.page.getByText(/No connections yet/).waitFor({ state: 'attached' })
-  assert.deepEqual(loading.state.mutations, [])
+test('Owner access toggle requires confirmation and verifies the returned project state', async t => {
+  const { page, panel, state } = await fixture(t)
+  await panel.getByRole('switch').locator('..').click()
+  assert.equal(state.enabled, false)
+  await page.getByRole('dialog').getByRole('button', { name: 'Enable project access', exact: true }).click()
+  await panel.getByText('Enabled', { exact: true }).waitFor()
+  assert.equal(await panel.getByRole('switch').isChecked(), true)
+  await panel.getByRole('switch').locator('..').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Disable project access', exact: true }).click()
+  await panel.getByText('Disabled', { exact: true }).waitFor()
+  assert.deepEqual(state.mutations, ['projects', 'projects'])
+})
+
+test('failed access update stays disabled and does not expose diagnostics or retry', async t => {
+  const { page, panel, state } = await fixture(t, { failEnable: true })
+  await panel.getByRole('switch').locator('..').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Enable project access', exact: true }).click()
+  await panel.getByRole('alert').waitFor()
+  assert.equal(await panel.getByRole('switch').isChecked(), false)
+  assert.doesNotMatch(await panel.innerText(), /Synthetic private/)
+  assert.deepEqual(state.mutations, ['projects'])
+})
+
+for (const role of ['DEVELOPER', 'QA']) test(role + ' cannot toggle access or revoke', async t => {
+  const { panel, state } = await fixture(t, { role, enabled: true, connections: [connection()] })
+  assert.equal(await panel.getByRole('switch').isDisabled(), true)
+  assert.equal(await panel.getByRole('button', { name: 'Revoke', exact: true }).count(), 0)
+  assert.deepEqual(state.mutations, [])
+})
+
+test('active connections exclude revoked and expired history even if a response contains it', async t => {
+  const { panel, state } = await fixture(t, { enabled: true, ignoreFilters: true, connections: [connection(), connection({ id: '55555555-5555-4555-8555-555555555555', client_label: 'Revoked history', revoked_at: '2026-01-02' }), connection({ id: '66666666-6666-4666-8666-666666666666', client_label: 'Expired history', token_expires_at: '2020-01-01' })] })
+  await panel.getByText('Synthetic Codex', { exact: true }).waitFor()
+  assert.equal(await panel.getByRole('button', { name: 'Revoke', exact: true }).count(), 1)
+  assert.doesNotMatch(await panel.textContent(), /Revoked history|Expired history|Expires|Advanced|44444444/)
+  assert.equal(await panel.getByText('Ready to connect', { exact: true }).count(), 1)
+  assert.equal(state.listQueries[0].project_id, 'eq.' + PROJECT)
+})
+
+test('project-disabled grants remain revocable without claiming live connectivity', async t => {
+  const { panel } = await fixture(t, { connections: [connection()] })
+  assert.equal(await panel.getByText('Project disabled', { exact: true }).count(), 1)
+  assert.equal(await panel.getByRole('button', { name: 'Revoke', exact: true }).count(), 1)
+  assert.equal(await panel.getByText('Ready to connect', { exact: true }).count(), 0)
+})
+
+test('revocation success waits for the exact project-scoped verification lookup', async t => {
+  const { page, panel, state } = await fixture(t, { connections: [connection()], lookupDelay: 500 })
+  await revoke(page)
+  assert.equal(await panel.getByText('Connection revoked.', { exact: true }).count(), 0)
+  await panel.getByText('Connection revoked.', { exact: true }).waitFor()
+  await panel.getByText('No active connections.', { exact: true }).waitFor()
+  assert.deepEqual(state.lookups, [{ id: 'eq.' + CONNECTION, project: 'eq.' + PROJECT, select: 'id,project_id,revoked_at' }])
+  assert.equal(state.revoked, 1)
+})
+
+for (const verifyMode of ['error', 'missing', 'unrevoked', 'foreign']) test('uncertain revocation (' + verifyMode + ') rechecks without repeating the mutation', async t => {
+  const { page, panel, state } = await fixture(t, { connections: [connection()], verifyMode })
+  await revoke(page)
+  await panel.getByText('Revocation not yet verified.', { exact: true }).waitFor()
+  assert.equal(await panel.getByText('Connection revoked.', { exact: true }).count(), 0)
+  state.verifyMode = 'confirmed'
+  await panel.getByRole('button', { name: 'Check revocation', exact: true }).click()
+  await panel.getByText('Connection revoked.', { exact: true }).waitFor()
+  assert.equal(state.revoked, 1)
+})
+
+test('failed revoke offers verification without claiming success or automatic retry', async t => {
+  const { page, panel, state } = await fixture(t, { connections: [connection()], failRevoke: true })
+  await revoke(page)
+  await panel.getByText('Could not confirm revocation.', { exact: true }).waitFor()
+  assert.equal(state.revoked, 1)
+  assert.equal(state.lookups.length, 0)
+  await panel.getByRole('button', { name: 'Check revocation', exact: true }).click()
+  await panel.getByText('Revocation not yet verified.', { exact: true }).waitFor()
+  assert.equal(state.revoked, 1)
+})
+
+test('archived Owner manages connections without setup, access changes or restoration', async t => {
+  const { page, panel, state } = await fixture(t, { archived: true, enabled: true, connections: [connection()] })
+  assert.equal(await panel.getByRole('switch').count(), 0)
+  assert.equal(await panel.getByRole('button', { name: 'Copy connector command' }).count(), 0)
+  await panel.getByText('Project archived', { exact: true }).waitFor()
+  await revoke(page)
+  await panel.getByText('Connection revoked.', { exact: true }).waitFor()
+  assert.deepEqual(state.mutations, ['revoke_mcp_connection'])
+  assert.equal(state.enabled, true)
+})
+
+test('archived non-Owner cannot revoke or access setup', async t => {
+  const { panel, state } = await fixture(t, { archived: true, role: 'DEVELOPER' })
+  await panel.getByText('No active connections.', { exact: true }).waitFor()
+  assert.equal(await panel.getByRole('switch').count(), 0)
+  assert.equal(await panel.getByRole('button').count(), 0)
+  assert.deepEqual(state.mutations, [])
+})
+
+test('loading and error states disable privileged controls and support a read-only retry', async t => {
+  const loading = await fixture(t, { delayLoad: 1000 })
+  assert.equal(await loading.panel.getByRole('switch').isDisabled(), true)
+  await loading.panel.getByText('No active connections.', { exact: true }).waitFor()
   const failed = await fixture(t, { failLoad: true })
-  await failed.page.getByRole('alert').getByText(/Unable to check integration access/).waitFor()
-  assert.equal(await failed.page.getByRole('button', { name: 'Open manual setup', exact: true, includeHidden: true }).isDisabled(), true)
-  assert.equal(await failed.page.getByText('Ready to connect', { exact: true }).count(), 0)
+  await failed.panel.getByRole('alert').waitFor()
+  assert.equal(await failed.panel.getByRole('switch').isDisabled(), true)
+  assert.equal(await failed.panel.getByText('No active connections.', { exact: true }).count(), 0)
+  failed.state.failLoad = false
+  await failed.panel.getByRole('button', { name: 'Retry', exact: true }).click()
+  await failed.panel.getByText('No active connections.', { exact: true }).waitFor()
   assert.deepEqual(failed.state.mutations, [])
 })
 
-test('connector and archived management layouts fit mobile and desktop without opening manual setup', async t => {
-  for (const width of [375, 1280]) {
-    const { page, state } = await fixture(t, { width })
-    assert.equal(await page.getByRole('button', { name: 'Copy connector command', exact: true }).count(), 1)
-    assert.equal(await page.getByRole('button', { name: 'Open manual setup', exact: true }).count(), 0)
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    if (process.env.MCP_UI_SCREENSHOTS) await page.getByRole('heading', { name: 'AI Integrations', exact: true }).locator('xpath=ancestor::section[1]').screenshot({ path: path.join(process.env.MCP_UI_SCREENSHOTS, `connector-${width}.png`) })
-    assert.deepEqual(state.mutations, [])
-    const archived = await fixture(t, { width, archived: true, connections: [syntheticConnection()] })
-    // Check the changed panel; the pre-existing standalone archive header has
-    // a separate narrow-screen overflow and is outside MCP integration scope.
-    const panel = archived.page.getByRole('heading', { name: 'Synthetic onboarding · Connections', exact: true }).locator('xpath=ancestor::section[1]/..')
-    const bounds = await panel.boundingBox()
-    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width)
-    assert.equal(await panel.evaluate(element => element.scrollWidth <= element.clientWidth), true)
-    if (process.env.MCP_UI_SCREENSHOTS) await panel.screenshot({ path: path.join(process.env.MCP_UI_SCREENSHOTS, `archived-${width}.png`) })
-    assert.deepEqual(archived.state.mutations, [])
-  }
+test('pagination applies only to active connections', async t => {
+  const rows = Array.from({ length: 11 }, (_, i) => connection({ id: '77777777-7777-4777-8777-' + String(i).padStart(12, '0'), client_label: 'Client ' + (i + 1) }))
+  const { panel, state } = await fixture(t, { connections: rows })
+  assert.equal(await panel.getByRole('button', { name: 'Revoke', exact: true }).count(), 10)
+  await panel.getByRole('button', { name: 'Next', exact: true }).click()
+  await panel.getByText('Client 11', { exact: true }).waitFor()
+  assert.equal(await panel.getByRole('button', { name: 'Revoke', exact: true }).count(), 1)
+  assert.equal(state.listQueries.at(-1).offset, '10')
 })
 
-test('v0.1.1 hosted onboarding needs no manual public key; custom configuration stays advanced', async t => {
+test('actual minimal desktop and mobile panels fit, with obsolete UI absent from the DOM', async t => {
   for (const width of [375, 1280]) {
-    const { page, state } = await fixture(t, { width })
-    const overview = page.getByRole('heading', { name: 'AI Integrations', exact: true }).locator('xpath=ancestor::section[1]')
-    assert.match(await overview.innerText(), /v0\.1\.1 or newer includes official hosted configuration/)
-    assert.doesNotMatch(await overview.innerText(), /TRACKQA_PUBLIC_KEY|\$env:/)
-    await page.getByText('Requirements, supported clients and disconnect', { exact: true }).click()
-    assert.doesNotMatch(await overview.innerText(), /TRACKQA_PUBLIC_KEY|\$env:/)
-    const custom = page.getByText('Advanced: custom deployments', { exact: true })
-    assert.equal(await custom.locator('..').evaluate(element => element.open), false)
-    await custom.click()
-    assert.match(await custom.locator('..').innerText(), /TRACKQA_PUBLIC_KEY/)
-    assert.match(await custom.locator('..').innerText(), /key override alone does not change the backend/)
-    assert.deepEqual(state.mutations, [])
+    const { panel } = await fixture(t, { width, enabled: true, connections: [connection({ client_label: 'Synthetic client with a longer connection name' })] })
+    assert.equal(await panel.locator('details').count(), 0)
+    assert.doesNotMatch(await panel.textContent(), /Requirements|Advanced|Manual|TRACKQA_PUBLIC_KEY|Windows|MFA|Expires|recovery|disconnect|experimental|connection ID/i)
+    assert.equal(await panel.evaluate(e => e.scrollWidth <= e.clientWidth), true)
+    await panel.scrollIntoViewIfNeeded()
+    if (process.env.MCP_UI_SCREENSHOTS) await panel.screenshot({ path: path.join(process.env.MCP_UI_SCREENSHOTS, 'minimal-' + width + '.png') })
+    const archived = await fixture(t, { width, archived: true, connections: [connection()] })
+    assert.equal(await archived.panel.evaluate(e => e.scrollWidth <= e.clientWidth), true)
   }
 })
