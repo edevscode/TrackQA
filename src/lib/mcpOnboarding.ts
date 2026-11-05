@@ -32,3 +32,38 @@ export function connectionStatus(connection: McpConnection, enabled: boolean, ar
   if (!enabled) return 'Project disabled'
   return 'Ready to connect'
 }
+
+export type McpClientType = 'generic' | 'claude' | 'codex' | 'vscode'
+
+export function clientConfigSnippet(setup: { endpoint: string; envVar: string }, client: McpClientType): string {
+  switch (client) {
+    case 'claude':
+      return JSON.stringify({
+        mcpServers: {
+          trackqa: {
+            type: 'http',
+            url: setup.endpoint,
+            headers: {
+              Authorization: `Bearer \${${setup.envVar}}`,
+            },
+          },
+        },
+      }, null, 2)
+    case 'codex':
+      return `[mcp_servers.trackqa]\nurl = "${setup.endpoint}"\nbearer_token_env_var = "${setup.envVar}"`
+    case 'vscode':
+      return JSON.stringify({
+        mcpServers: {
+          trackqa: {
+            url: setup.endpoint,
+            headers: {
+              Authorization: `Bearer \${${setup.envVar}}`,
+            },
+          },
+        },
+      }, null, 2)
+    case 'generic':
+    default:
+      return `Endpoint: ${setup.endpoint}\nHeader: Authorization: Bearer <TOKEN>\nEnvironment: ${setup.envVar}=<TOKEN>`
+  }
+}

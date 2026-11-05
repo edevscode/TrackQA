@@ -10,4 +10,3 @@ supabase/functions/trackqa-mcp/** text eol=lf
 supabase/functions/trackqa-mcp/deno-tests/entrypoint-fixture.ts -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 supabase/config.toml text eol=lf
 supabase/.gitignore text eol=lf
-tools/mcp-pilot/** text eol=lf

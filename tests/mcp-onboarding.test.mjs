@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mcpSetup, connectionStatus, connectionFields, mcpTools } from '../src/lib/mcpOnboarding.ts'
+import { mcpSetup, connectionStatus, connectionFields, mcpTools, clientConfigSnippet } from '../src/lib/mcpOnboarding.ts'
 import { isActiveConnection, verifyConnectionRevoked } from '../src/lib/mcpConnections.ts'
 
 const PROJECT = '11111111-1111-4111-8111-111111111111'
@@ -61,4 +61,26 @@ test('ambiguous or failed verification returns uncertainty without retrying', as
   assert.equal(await verifyConnectionRevoked(async () => { calls++; throw new Error('Synthetic failure') }, PROJECT, CONNECTION), false)
   assert.equal(calls, 1)
   assert.equal(await verifyConnectionRevoked(async () => ({ data: { id: CONNECTION, project_id: PROJECT, revoked_at: '2026-01-02' }, error: {} }), PROJECT, CONNECTION), false)
+})
+
+test('clientConfigSnippet produces correct client configurations without literal secrets', () => {
+  const setup = mcpSetup('https://project.supabase.co', PROJECT)
+  const claude = JSON.parse(clientConfigSnippet(setup, 'claude'))
+  assert.equal(claude.mcpServers.trackqa.url, 'https://project.supabase.co/functions/v1/trackqa-mcp')
+  assert.equal(claude.mcpServers.trackqa.type, 'http')
+  assert.equal(claude.mcpServers.trackqa.headers.Authorization, `Bearer \${${setup.envVar}}`)
+
+  const codex = clientConfigSnippet(setup, 'codex')
+  assert.match(codex, /\[mcp_servers\.trackqa\]/)
+  assert.match(codex, /url = "https:\/\/project\.supabase\.co\/functions\/v1\/trackqa-mcp"/)
+  assert.match(codex, new RegExp(`bearer_token_env_var = "${setup.envVar}"`))
+
+  const vscode = JSON.parse(clientConfigSnippet(setup, 'vscode'))
+  assert.equal(vscode.mcpServers.trackqa.url, 'https://project.supabase.co/functions/v1/trackqa-mcp')
+  assert.equal(vscode.mcpServers.trackqa.headers.Authorization, `Bearer \${${setup.envVar}}`)
+
+  const generic = clientConfigSnippet(setup, 'generic')
+  assert.match(generic, /Endpoint: https:\/\/project\.supabase\.co\/functions\/v1\/trackqa-mcp/)
+  assert.match(generic, /Header: Authorization: Bearer <TOKEN>/)
+  assert.match(generic, new RegExp(`Environment: ${setup.envVar}=<TOKEN>`))
 })

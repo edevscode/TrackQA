@@ -115,16 +115,13 @@ async function revoke(page) {
   await page.getByRole('dialog').getByRole('button', { name: 'Revoke connection', exact: true }).click()
 }
 
-test('minimal page has command/copy, access switch, short instruction and simple empty state only', async t => {
-  const { page, panel, state } = await fixture(t)
+test('minimal page has access switch, short instruction and simple empty state when disabled', async t => {
+  const { panel, state } = await fixture(t)
   assert.equal(await panel.getByRole('switch', { name: 'Project MCP access' }).isChecked(), false)
   assert.equal(await panel.getByText('Disabled', { exact: true }).count(), 1)
-  await panel.getByRole('button', { name: 'Copy connector command' }).click()
-  assert.deepEqual(await page.evaluate(() => window.__copies), ['npx trackqa connect'])
-  assert.equal(await panel.getByText('Follow the CLI prompts to connect.', { exact: true }).count(), 1)
   assert.equal(await panel.getByText('No active connections.', { exact: true }).count(), 1)
-  assert.equal(await panel.locator('details, pre, [role="dialog"], input[type="text"], input[type="password"]').count(), 0)
-  assert.doesNotMatch(await panel.textContent(), /Requirements|supported clients|Advanced|Manual Setup|TRACKQA_PUBLIC_KEY|VITE_SUPABASE|Windows|Node\.js|5173|MFA|Google|90 days|Expires|recovery|disconnect|Gemini|Claude|Antigravity|experimental|connection ID/i)
+  assert.equal(await panel.locator('details, [role="dialog"], input[type="text"], input[type="password"]').count(), 0)
+  assert.doesNotMatch(await panel.textContent(), /Requirements|supported clients|Advanced|Manual Setup|TRACKQA_PUBLIC_KEY|VITE_SUPABASE|Windows|Node\.js|5173|MFA|Google|90 days|Expires|recovery|disconnect|experimental|connection ID/i)
   assert.deepEqual(state.mutations, [])
 })
 
@@ -209,7 +206,7 @@ test('failed revoke offers verification without claiming success or automatic re
 test('archived Owner manages connections without setup, access changes or restoration', async t => {
   const { page, panel, state } = await fixture(t, { archived: true, enabled: true, connections: [connection()] })
   assert.equal(await panel.getByRole('switch').count(), 0)
-  assert.equal(await panel.getByRole('button', { name: 'Copy connector command' }).count(), 0)
+  assert.equal(await panel.getByRole('button', { name: 'Generate connection' }).count(), 0)
   await panel.getByText('Project archived', { exact: true }).waitFor()
   await revoke(page)
   await panel.getByText('Connection revoked.', { exact: true }).waitFor()
