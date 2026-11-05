@@ -50,7 +50,7 @@ export async function verifyCodex(executable: string, codexHome: string, setup: 
     child.stdin!.write(JSON.stringify({ id, method, params }) + '\n')
   })
   try {
-    await rpc('initialize', { clientInfo: { name: 'trackqa_connect', version: '0.1.1' } })
+    await rpc('initialize', { clientInfo: { name: 'trackqa_connect', version: '0.1.2' } })
     child.stdin!.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n')
     const config = await rpc('config/read')
     const servers = config?.config?.mcp_servers

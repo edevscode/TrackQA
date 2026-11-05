@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -20,7 +20,7 @@ async function temporary(t){
 }
 
 test('publishable trackqa candidate preserves its identity and executable without the private flag',()=>{
-  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.1');assert.equal(Object.hasOwn(manifest,'private'),false)
+  assert.equal(manifest.name,'trackqa');assert.equal(manifest.version,'0.1.2');assert.equal(Object.hasOwn(manifest,'private'),false)
   assert.deepEqual(manifest.bin,{trackqa:'dist/tools/trackqa-connect/src/cli.js'})
   assert.deepEqual(manifest.dependencies,{'@supabase/supabase-js':'2.113.0'})
   assert.equal(manifest.engines.node,'>=22.19.0')
@@ -60,7 +60,7 @@ test('packaged hosted configuration resolves in an empty environment without che
   assert.equal(`https://${claims.ref}.supabase.co`, SUPABASE_URL)
   await assert.rejects(publicKey({ TRACKQA_PUBLIC_KEY: 'sb_secret_synthetic' }))
   const cli = await readFile(entry, 'utf8')
-  assert.match(cli, /TrackQA Connect 0\.1\.1/)
+  assert.match(cli, /TrackQA Connect 0\.1\.2/)
   assert.match(cli, /no TRACKQA_PUBLIC_KEY setup is required/)
 })
 
@@ -69,6 +69,22 @@ test('compiled normal and direct workflow paths preserve the Copilot production 
   const forbidden=new Proxy({},{get(){assert.fail('No authentication, project access or launch is permitted')}})
   await assert.rejects(connect({adapter:{client:'vscode-copilot'},owner:forbidden,store:forbidden,ui:forbidden}),e=>e.code==='copilot_runtime_unverified')
   await assert.rejects(connectCopilotFixture({permit:{},adapter:{client:'vscode-copilot'},owner:forbidden,store:forbidden,ui:forbidden}),e=>e.code==='fixture_capability_invalid')
+})
+
+test('packaged location resolution accepts default profile and recovery roots from the user home without authentication', async t => {
+  const home = await temporary(t)
+  const data = process.platform === 'win32' ? path.join(home, 'AppData', 'Local') : path.join(home, '.local', 'state')
+  await mkdir(path.join(home, '.codex'))
+  await mkdir(data, { recursive: true })
+  const module = pathToFileURL(entry).href
+  const script = `const { locations } = await import(${JSON.stringify(module)}); const paths = await locations(process.env, 'codex'); console.log(JSON.stringify({ codexHome: paths.codexHome, recoveryRoot: paths.store.root }));`
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: home, encoding: 'utf8', env: { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, HOME: home, USERPROFILE: home, LOCALAPPDATA: data, XDG_STATE_HOME: data },
+  })
+  assert.equal(result.status, 0)
+  assert.deepEqual(JSON.parse(result.stdout), { codexHome: path.join(home, '.codex'), recoveryRoot: path.join(data, 'TrackQA-Connect') })
+  assert.deepEqual(await readdir(path.join(home, '.codex')), [])
+  assert.deepEqual(await readdir(data), [], 'Path checks must not create locks, authentication or recovery state')
 })
 
 test('runtime closure refuses undeclared dependencies and imports outside the packaged tree without executing them',async t=>{

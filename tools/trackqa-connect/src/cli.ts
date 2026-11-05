@@ -19,7 +19,7 @@ import { Store } from './state.ts'
 import { connect, disconnect, status } from './workflow.ts'
 import type { UI } from './workflow.ts'
 
-export const help = `TrackQA Connect 0.1.1 - Windows, Owner-operated MVP release candidate
+export const help = `TrackQA Connect 0.1.2 - Windows, Owner-operated MVP release candidate
 Usage after installing the approved package or local tarball:
   trackqa connect --client codex
   trackqa status --client codex
@@ -43,15 +43,32 @@ No bearer token is saved. The existing 90-day token expiry is unchanged; session
 Status is local-only: it does not authorize or test a live MCP connection.
 Disconnect may require fresh Google Owner sign-in. Never pass credentials as arguments.`
 
+const samePath = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
+const under = (target: string, base: string) => {
+  const relative = path.relative(path.resolve(base).toLowerCase(), path.resolve(target).toLowerCase())
+  return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
+}
+
+export function isSafeConfigurationRoot(target: string, cwd: string, repo: string, home: string, defaultRoot: string) {
+  if (![target, cwd, repo, home, defaultRoot].every(value => path.isAbsolute(value))) return false
+  // Home is also a common shell launch directory. Exempt only the exact
+  // default root there, never a workspace-local override or the package tree.
+  return !under(target, repo) && (!under(target, cwd) || (samePath(cwd, home) && samePath(target, defaultRoot)))
+}
+
 export async function locations(env: NodeJS.ProcessEnv = process.env, client: Client = 'codex') {
   const codexHome = env.CODEX_HOME ?? path.join(os.homedir(), '.codex')
   if (client === 'codex') requireValue(path.isAbsolute(codexHome), 'configuration_location_untrusted')
   const canonical = await realpath(codexHome).catch(() => path.resolve(codexHome))
   const repo = fileURLToPath(new URL('../../../', import.meta.url))
-  const under = (target: string, base: string) => target.toLowerCase() === base.toLowerCase() || target.toLowerCase().startsWith(path.resolve(base).toLowerCase() + path.sep)
-  if (client === 'codex') requireValue(!under(canonical, process.cwd()) && !under(canonical, repo), 'configuration_location_untrusted')
+  const cwd = await realpath(process.cwd())
+  const home = await realpath(os.homedir()).catch(() => path.resolve(os.homedir()))
+  if (client === 'codex') requireValue(isSafeConfigurationRoot(canonical, cwd, repo, home, path.join(home, '.codex')), 'configuration_location_untrusted')
   const data = process.platform === 'win32' ? env.LOCALAPPDATA : env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state')
-  requireValue(data && path.isAbsolute(data) && !under(data, repo) && !under(data, process.cwd()), 'recovery_unavailable')
+  requireValue(data && path.isAbsolute(data), 'recovery_unavailable')
+  const canonicalData = await realpath(data).catch(() => path.resolve(data))
+  const defaultData = process.platform === 'win32' ? path.join(home, 'AppData', 'Local') : path.join(home, '.local', 'state')
+  requireValue(isSafeConfigurationRoot(canonicalData, cwd, repo, home, defaultData), 'recovery_unavailable')
   const geminiHome = env.GEMINI_CLI_HOME ?? os.homedir()
   const geminiCanonical = await realpath(geminiHome).catch(() => path.resolve(geminiHome))
   if (client === 'gemini') {

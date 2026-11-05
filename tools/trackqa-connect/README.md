@@ -7,19 +7,22 @@ credentials. The connector does not install or authenticate the AI client itself
 
 ## Package status and installation
 
-**trackqa@0.1.0** was published and independently verified on November 4, 2026.
-The locally prepared **v0.1.1 candidate** removes manual public-key setup for the
-official hosted TrackQA service. **v0.1.1 is not published; publication requires
-separate approval.** The original v0.1.0 artifact is retained unchanged.
+**trackqa@0.1.2** was published and independently verified on November 5, 2026.
+This patch fixes Codex launches from the Windows user home:
+the standard profile and application-data directories are no longer incorrectly
+rejected as workspace-local configuration. Workspace and package boundaries
+remain enforced. Public installation, client selection and home-directory path
+checks passed; the published tarball matches the approved artifact.
+The published v0.1.0 and v0.1.1 artifacts are retained unchanged.
 
 To verify an approved local tarball in a disposable directory:
 
 ```powershell
-npm install --ignore-scripts --no-audit --no-fund <absolute-path-to-trackqa-0.1.1.tgz>
+npm install --ignore-scripts --no-audit --no-fund <absolute-path-to-trackqa-0.1.2.tgz>
 npm exec --offline -- trackqa --help
 ```
 
-After v0.1.1 is approved and published, the official hosted workflow is:
+The official hosted workflow is:
 
 ```powershell
 npx trackqa connect
@@ -29,9 +32,9 @@ npx trackqa status --client codex
 npx trackqa disconnect --client codex --project <project-UUID>
 ```
 
-Until v0.1.1 is published, the bare registry command still resolves to v0.1.0 and
-retains that version's manual public-key requirement. Validate this candidate
-through a local tarball installation and `npm exec --offline -- trackqa ...`.
+The registry's latest version is v0.1.2. To request this version explicitly, run
+`npx trackqa@0.1.2 connect`. It supports launching from the user home with the
+default Codex profile and application-data directories.
 Bare `connect` prompts for a client; `--client codex` is optional. No client is
 selected by default.
 

@@ -338,6 +338,12 @@ Since v0.1.1, the official hosted public anon key is included. Explicit
 Only public anon/publishable keys are accepted. Never supply a service-role key,
 database password or human access token. No environment files are written.
 
+The v0.1.2 location check allows the exact default Codex profile and OS data root
+when the shell starts in the user home. Configuration inside a coding workspace
+or the connector package remains rejected, including resolved redirects into
+those directories. Custom workspace-local roots are not exempted. Location
+resolution is read-only and happens before authentication or configuration writes.
+
 ## Claude Code adapter — Phase 2C (experimental; authenticated acceptance blocked)
 
 Windows native `claude.exe` only; Claude Code is not installed by the connector.
