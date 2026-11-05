@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { execSync } from 'node:child_process'
-import { writeSecureFile } from './fs-secure.js'
+import { writeSecureFile, createBoundedBackup } from './fs-secure.js'
 import { protectGitIgnore } from '../git-protect.js'
 
 export const name = 'Claude Code'
@@ -65,9 +65,7 @@ export async function configure({ endpoint, token, configPath }) {
         const raw = fs.readFileSync(configFile, 'utf8').trim()
         if (raw) config = JSON.parse(raw)
       } catch {
-        const backup = `${configFile}.bak.${Date.now()}`
-        fs.copyFileSync(configFile, backup)
-        try { fs.chmodSync(backup, 0o600) } catch {}
+        createBoundedBackup(configFile)
         config = {}
       }
     }

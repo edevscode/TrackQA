@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { makeSecureDir, writeSecureFile } from './fs-secure.js'
+import { makeSecureDir, writeSecureFile, createBoundedBackup } from './fs-secure.js'
 import { protectGitIgnore } from '../git-protect.js'
 
 export const name = 'VS Code'
@@ -40,9 +40,7 @@ export async function configure({ endpoint, token, configPath }) {
         config = JSON.parse(raw)
       }
     } catch {
-      const backup = `${configFile}.bak.${Date.now()}`
-      fs.copyFileSync(configFile, backup)
-      try { fs.chmodSync(backup, 0o600) } catch {}
+      createBoundedBackup(configFile)
       config = {}
     }
   }

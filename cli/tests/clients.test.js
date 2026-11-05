@@ -10,6 +10,7 @@ import * as claude from '../src/clients/claude.js'
 import * as windsurf from '../src/clients/windsurf.js'
 import * as codex from '../src/clients/codex.js'
 import { protectGitIgnore } from '../src/git-protect.js'
+import { writeSecureFile, createBoundedBackup } from '../src/clients/fs-secure.js'
 
 test('clients test suite', async t => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackqa-cli-test-'))
@@ -181,5 +182,39 @@ url = "https://other.com/mcp"
     const nonGitDir = path.join(tempDir, 'non-git')
     fs.mkdirSync(nonGitDir, { recursive: true })
     assert.equal(protectGitIgnore(path.join(nonGitDir, '.mcp.json'), nonGitDir), false)
+  })
+
+  await t.test('writeSecureFile skips unnecessary disk rewrites when content is unchanged', async () => {
+    const testFile = path.join(tempDir, 'secure-test.json')
+    const content = '{\n  "test": true\n}\n'
+
+    // Initial write
+    const write1 = writeSecureFile(testFile, content)
+    assert.equal(write1, true)
+    assert.equal(fs.readFileSync(testFile, 'utf8'), content)
+
+    const stat1 = fs.statSync(testFile)
+
+    // Second write with identical content
+    const write2 = writeSecureFile(testFile, content)
+    assert.equal(write2, false) // skipped!
+
+    const stat2 = fs.statSync(testFile)
+    assert.equal(stat1.mtimeMs, stat2.mtimeMs) // mtime preserved!
+  })
+
+  await t.test('createBoundedBackup keeps at most 2 backups and prunes unbounded legacy backups', async () => {
+    const corruptFile = path.join(tempDir, 'corrupt.json')
+    fs.writeFileSync(corruptFile, '{"broken', 'utf8')
+
+    // Create 5 repeated backups
+    for (let i = 0; i < 5; i++) {
+      createBoundedBackup(corruptFile)
+    }
+
+    const filesInDir = fs.readdirSync(tempDir).filter(f => f.startsWith('corrupt.json.bak'))
+    // Must only have corrupt.json.bak and corrupt.json.bak.old (<= 2)
+    assert.ok(filesInDir.length <= 2)
+    assert.ok(fs.existsSync(path.join(tempDir, 'corrupt.json.bak')))
   })
 })

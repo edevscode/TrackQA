@@ -31,7 +31,7 @@ async function main() {
       process.exit(0)
     }
     if (arg === '--version' || arg === '-v') {
-      console.log('trackqa v0.2.1')
+      console.log('trackqa v0.2.2')
       process.exit(0)
     }
     if (arg === '--project' && i + 1 < args.length) {
